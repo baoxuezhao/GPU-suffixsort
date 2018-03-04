@@ -1,0 +1,444 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cstdio>
+#include <cuda.h>
+#include <omp.h>
+#include <algorithm>
+#include <vector>
+
+#include <thrust/count.h>
+#include <thrust/transform.h>
+#include <thrust/functional.h>
+#include <thrust/scan.h>
+#include <thrust/device_ptr.h>
+#include <thrust/sort.h>
+#include <thrust/unique.h>
+#include <thrust/merge.h>
+#include <thrust/set_operations.h>
+
+#include "skew_kernel.cuh"
+
+using namespace std;
+
+void cudaCheckError(int line)
+{
+	cudaThreadSynchronize();
+	cudaError_t err = cudaGetLastError();
+	if(err != cudaSuccess)
+		printf("Last cuda error is %d at %d\n", err, line);
+}
+
+void check_h_order_correctness_device(uint *d_values, uint *d_ref, uint size, uint h_order)
+{
+	
+	printf("checking %u-order sa in device...\n", h_order);
+
+	uint *h_values = new uint[size];
+	uint *h_ref    = new uint[size];
+	cudaMemcpy(h_values, d_values, size*sizeof(uint), cudaMemcpyDeviceToHost);
+	cudaMemcpy(h_ref,    d_ref,    size*sizeof(uint), cudaMemcpyDeviceToHost);
+
+
+	uint start_pos1, start_pos2;
+	uint i, j;
+	uint num_wrong = 0;
+	uint bound;
+	bool wrong;
+
+	for (i = 1; i < size; i += 1)
+	{
+		start_pos1 = h_values[i-1];
+		start_pos2 = h_values[i];
+		wrong = false;
+		bound = size-start_pos1<size-start_pos2?size-start_pos1:size-start_pos2;
+		bound = bound < h_order ? bound:h_order;
+		for (j = 0; j < bound; j++)
+		{
+			if (h_ref[j+start_pos1] < h_ref[j+start_pos2])
+				break;
+			else if (h_ref[j+start_pos1] > h_ref[j+start_pos2])
+			{
+				wrong = true;
+				break;
+			}
+		}
+		if (wrong)
+			num_wrong++;
+	}
+
+	if (num_wrong)
+	{
+		fprintf(stderr, "error: %d-order sa is incorrect (device)\n", h_order);
+		fprintf(stderr, "number of wrong positions: %u\n", num_wrong);
+	}
+	else
+		printf("%d-order sa result is correct (device)\n", h_order);
+
+	delete [] h_values;
+	delete [] h_ref;
+
+}
+
+template <typename T1, type name T2>
+void sort(T1 *d_key, T2 *d_value, uint size)
+{
+	thrust::device_ptr<T1> d_key_ptr  = thrust::device_pointer_cast(d_key);
+	thrust::device_ptr<T2> d_val_ptr = thrust::device_pointer_cast(d_value);
+	thrust::sort_by_key(d_key_ptr, d_key_ptr+size, d_val_ptr);
+}
+
+uint prefix_sum(uint *d_input, uint *d_output, uint size)
+{
+	uint sum = 0;
+
+	//uint32 first_rank = 1;
+	//mem_host2device(&first_rank, d_input, sizeof(uint32));
+
+	thrust::device_ptr<uint> d_input_ptr = thrust::device_pointer_cast(d_input);
+	thrust::device_ptr<uint> d_output_ptr = thrust::device_pointer_cast(d_output);
+
+	thrust::inclusive_scan(d_input_ptr, d_input_ptr+size, d_output_ptr);
+
+	cudaMemcpy(&sum, d_output+size-1, sizeof(uint), cudaMemcpyDeviceToHost);
+
+	return sum;
+}
+
+void recursiveSort(uint *d_intchar, uint *d_sa, uint size)
+{
+	//construct sample string
+	//exclude the last \0
+	int mod30 = size/3 + (size%3!=0);
+	int mod31 = size/3 + (size%3==2);
+	int mod32 = size/3;
+
+	int sample_len = mod31 + mod32;
+	
+	printf("num elements mod3 is 0,1,2 is %d, %d, %d\n", mod30, mod31, mod32);
+
+	uint64 *d_sample12;
+	uint   *d_sa12;
+	
+	//construct and sort the first part key 
+	//(the first two int of the triplet, and the second int is in the value part with the sa array)
+	cudaMalloc((void**)&d_sample12, sample_len*sizeof(uint64));
+	cudaMalloc((void**)&d_sa12,  	sample_len*sizeof(uint));
+
+	dim3 h_dimBlock(BLOCK_SIZE,1,1);
+	dim3 h_dimGrid(1,1,1);
+	int numBlocks = CEIL(mod31, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	get_sample_triplet_value1<<<h_dimGrid, h_dimBlock>>>(d_intchar, d_sample12, d_sa12, mod31, mod32, size);
+
+
+	thrust::device_ptr<uint64> d_key_ptr  = thrust::device_pointer_cast(d_sample12);
+	thrust::device_ptr<uint>   d_sa12_ptr = thrust::device_pointer_cast(d_sa12);
+	thrust::sort_by_key(d_key_ptr, d_key_ptr+sample_len, d_sa12_ptr);
+	
+	//mark12<<<h_dimGrid, h_dimBlock>>>(d_sample12, d_value1, mod31, mod32);
+
+	uint *d_sample3 = (uint*)d_sample12;
+	uint *d_isa1    = d_sample3 + sample_len;
+
+	//construct and sort the second part key
+	get_sample_triplet_value2<<<h_dimGrid, h_dimBlock>>>(d_sa12, d_sample3, d_intchar, mod31, mod32);
+
+	thrust::device_ptr<uint> d_sample_ptr = thrust::device_pointer_cast(d_sample3);
+	thrust::sort_by_key(d_sample_ptr, d_sample_ptr+sample_len, d_sa12_ptr);
+
+	//find the segment boundary
+	//mark3<<<h_dimGrid, h_dimBlock>>>(d_sample3, d_sa12, d_isa1, mod31, mod32);
+	mark3<<<h_dimGrid, h_dimBlock>>>(d_sample3, d_sa12, d_isa1, d_intchar, mod31, mod32, size);
+
+	//uint *d_isa1 = (uint*)d_value1;
+	uint *d_isa2 = d_sample3;
+
+	//prefix sum
+	int num_unique = prefix_sum(d_isa1, d_isa2, sample_len);
+
+	printf("num_unique2 is %d, %d\n", num_unique, sample_len);
+	
+	if(num_unique != sample_len)
+	{		
+		//scatter to compute isa
+		h_dimGrid.x = h_dimGrid.y = 1;
+		numBlocks = CEIL(sample_len, h_dimBlock.x);
+		THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+		scatter_for_recursion<<<h_dimGrid, h_dimBlock>>>(d_isa2, d_isa1, d_sa12, mod31, sample_len);
+
+		//recursive sort
+		recursiveSort(d_isa1, d_sa12, sample_len);
+	}
+
+	cudaCheckError(__LINE__);
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(sample_len, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+	transform_local2global_sa<<<h_dimGrid, h_dimBlock>>>(d_sa12, mod31, sample_len);
+
+	cudaCheckError(__LINE__);
+
+	uint *d_global_rank;
+	cudaMalloc((void**)&d_global_rank, (size+2)*sizeof(uint));
+	cudaMemset(d_global_rank, 0, (size+2)*sizeof(uint));
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(sample_len, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	//scatter d_sa12 to get global rank for pos mod31 and mod32, as well as size and size+1
+	scatter_global_rank<<<h_dimGrid, h_dimBlock>>>(d_sa12, d_global_rank, sample_len, size);
+
+	cudaCheckError(__LINE__);
+
+	//radix sort s0
+	mod30 = size - sample_len;
+	uint64 *d_key0;
+	uint *d_sa0;
+	cudaMalloc((void**)&d_key0, mod30*sizeof(uint64));
+	cudaMalloc((void**)&d_sa0, mod30*sizeof(uint));	
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(mod30, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+	get_s0_pair<uint><<<h_dimGrid, h_dimBlock>>>(d_key0, d_sa0, d_intchar, d_global_rank, mod30, size);
+
+	cudaCheckError(__LINE__);
+
+	thrust::device_ptr<uint64> d_key0_ptr = thrust::device_pointer_cast(d_key0);
+	thrust::device_ptr<uint> d_sa0_ptr = thrust::device_pointer_cast(d_sa0);
+	thrust::sort_by_key(d_key0_ptr, d_key0_ptr+mod30, d_sa0_ptr);
+
+	cudaCheckError(__LINE__);
+
+	//cudaMemcpy(d_sa,  	d_sa0,  mod30*sizeof(uint), cudaMemcpyDeviceToDevice);
+	//cudaMemcpy(d_sa+mod30,  d_sa12, sample_len*sizeof(uint), cudaMemcpyDeviceToDevice);
+
+	//merge s0 and s12
+	thrust::device_ptr<uint> d_global_sa_ptr1 = thrust::device_pointer_cast(d_sa);
+	thrust::device_ptr<uint> d_sa0_ptr1 = thrust::device_pointer_cast(d_sa0);
+	thrust::device_ptr<uint> d_sa12_ptr1 = thrust::device_pointer_cast(d_sa12);
+
+	//thrust::sort(d_global_sa_ptr1, d_global_sa_ptr1 + size, merge_comp<uint>(d_intchar, d_global_rank, sample_len, size));
+	
+	thrust::merge(d_sa0_ptr1, d_sa0_ptr1+mod30, d_sa12_ptr1, d_sa12_ptr1+sample_len, d_global_sa_ptr1, merge_comp<uint>(d_intchar, d_global_rank, sample_len, size));
+
+	cudaFree(d_key0);
+	cudaFree(d_sa0);
+	cudaFree(d_global_rank);
+
+	cudaFree(d_sample12);
+	cudaFree(d_sa12);
+
+	cudaCheckError(__LINE__);
+
+	//check_h_order_correctness_device(d_sa, d_intchar, size, size);
+	
+}
+
+void computeSA(char *d_buffer, uint *d_global_sa, uint size)
+{
+	//construct sample string
+	//size-1 or not
+	int mod30 = (size)/3 + ((size)%3!=0);
+	int mod31 = (size)/3 + ((size)%3==2);
+	int mod32 = (size)/3;
+	
+	int sample_len = mod31 + mod32;
+
+	printf("num elements mod3 is 0,1,2 is %d, %d, %d\n", mod30, mod31, mod32);
+
+	uint *d_sample, *d_sa12, *d_isa1, *d_isa2;
+	cudaMalloc((void**)&d_sample, (sample_len+3)*sizeof(uint));
+	cudaMalloc((void**)&d_sa12,   (sample_len+3)*sizeof(uint));
+	cudaMalloc((void**)&d_isa1,   (sample_len+3)*sizeof(uint));
+	cudaMalloc((void**)&d_isa2,   (sample_len+3)*sizeof(uint));
+
+	dim3 h_dimBlock(BLOCK_SIZE,1,1);
+	dim3 h_dimGrid(1,1,1);
+	int numBlocks = CEIL(mod31, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	get_sample_triplet<<<h_dimGrid, h_dimBlock>>>(d_sa12, d_buffer, d_sample, mod31, mod32, size);
+
+	//sort the triplets
+	thrust::device_ptr<uint> d_sample_ptr = thrust::device_pointer_cast(d_sample);
+	thrust::device_ptr<uint> d_sa12_ptr = thrust::device_pointer_cast(d_sa12);
+	thrust::sort_by_key(d_sample_ptr, d_sample_ptr+sample_len, d_sa12_ptr);
+	
+
+	uint last_rank[] = {0xffffffff, 0, 0xffffffff};
+	cudaMemcpy(d_isa1+sample_len, last_rank, sizeof(uint)*3, cudaMemcpyHostToDevice);
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(CEIL(sample_len, 4), h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	//mark the start position of each segment to 1
+	neighbour_comparison_kernel1<<<h_dimGrid, h_dimBlock>>>(d_isa1, d_sample, sample_len);
+	neighbour_comparison_kernel2<<<h_dimGrid, h_dimBlock>>>(d_isa1, d_sample, sample_len);
+
+	int num_unique = prefix_sum(d_isa1, d_isa2, sample_len);
+
+	printf("num_unique is %d\n", num_unique);
+
+	if(num_unique != sample_len)
+	{
+		//scatter to compute isa
+
+		h_dimGrid.x = h_dimGrid.y = 1;
+		numBlocks = CEIL(sample_len, h_dimBlock.x);
+		THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+		scatter_for_recursion<<<h_dimGrid, h_dimBlock>>>(d_isa2, d_isa1, d_sa12, mod31, sample_len);
+
+		//recursive sort
+		recursiveSort(d_isa1, d_sa12, sample_len);
+	
+	}
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(sample_len, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+	transform_local2global_sa<<<h_dimGrid, h_dimBlock>>>(d_sa12, mod31, sample_len);
+	
+	cudaCheckError(__LINE__);
+
+	uint *d_global_rank;
+	cudaMalloc((void**)&d_global_rank, (size+2)*sizeof(uint));
+	cudaMemset(d_global_rank, 0, (size+2)*sizeof(uint));
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(sample_len, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	//scatter d_sa12 to get global rank for pos mod31 and mod32, as well as size and size+1
+	scatter_global_rank<<<h_dimGrid, h_dimBlock>>>(d_sa12, d_global_rank, sample_len, size);
+
+	cudaCheckError(__LINE__);
+
+	//radix sort s0
+	mod30 = size - sample_len;
+	uint64 *d_key0;
+	uint *d_sa0;
+	cudaMalloc((void**)&d_key0, mod30*sizeof(uint64));
+	cudaMalloc((void**)&d_sa0, mod30*sizeof(uint));
+	
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(mod30, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+	get_s0_pair<char><<<h_dimGrid, h_dimBlock>>>(d_key0, d_sa0, d_buffer, d_global_rank, mod30, size);
+
+	cudaCheckError(__LINE__);
+
+	thrust::device_ptr<uint64> d_key0_ptr = thrust::device_pointer_cast(d_key0);
+	thrust::device_ptr<uint> d_sa0_ptr = thrust::device_pointer_cast(d_sa0);
+	thrust::sort_by_key(d_key0_ptr, d_key0_ptr+mod30, d_sa0_ptr);
+
+	//merge s0 and s12
+
+	//cudaMemcpy(d_global_sa,  	d_sa0,  mod30*sizeof(uint), cudaMemcpyDeviceToDevice);
+	//cudaMemcpy(d_global_sa+mod30,  d_sa12, sample_len*sizeof(uint), cudaMemcpyDeviceToDevice);
+
+	thrust::device_ptr<uint> d_global_sa_ptr = thrust::device_pointer_cast(d_global_sa);
+
+	thrust::merge(d_sa0_ptr, d_sa0_ptr+mod30, d_sa12_ptr, d_sa12_ptr+sample_len, d_global_sa_ptr, merge_comp<char>(d_buffer, d_global_rank, sample_len, size));
+
+	//thrust::sort(d_global_sa_ptr, d_global_sa_ptr + size, merge_comp<char>(d_buffer, d_global_rank, sample_len, size));
+
+	cudaCheckError(__LINE__);
+
+
+	cudaFree(d_sa12);
+	cudaFree(d_sample);
+	cudaFree(d_isa1);
+	cudaFree(d_isa2);
+	cudaFree(d_global_rank);
+	cudaFree(d_key0);
+	cudaFree(d_sa0);
+
+	cudaCheckError(__LINE__);
+
+}
+
+
+int main(int argc, char** argv)
+{
+	if(argc < 2)
+	{
+		printf("file name!\n");
+		exit(-1);
+	}
+	
+	////////////////
+	FILE * pFile;
+  	long size;
+	size_t result;
+
+ 	pFile = fopen (argv[1],"r");
+	if (pFile==NULL) { perror ("Error opening file\n"); exit(1); }
+
+    	fseek (pFile, 0, SEEK_END);
+    	size=ftell(pFile);
+	rewind (pFile);	
+    	printf ("file size is: %ld bytes.\n",size);
+
+	char *buffer = (char*)malloc((size+4)*sizeof(char));
+	if (buffer == NULL) {fputs ("Memory error",stderr); exit (2);}
+	
+  	// copy the file into the buffer:
+  	result = fread (buffer,1, size, pFile);
+  	if (result != size) {fputs ("Reading error",stderr); exit (3);}
+
+	buffer[size] = buffer[size+1] = buffer[size+2] = buffer[size+3] = 0;
+
+	if(buffer[size-1] == 10)
+	{	
+		buffer[size-1]=0;
+	}
+
+	if(buffer[size-1] != 0)
+	{	
+		size+=1;
+	}
+	
+	printf("string size is %ld\n", size);
+	
+
+	char *d_buffer;
+	cudaMalloc((void**)&d_buffer,  	(size+3)*sizeof(char));
+	cudaMemcpy(d_buffer, h_buffer, (size+3)*sizeof(char), cudaMemcpyHostToDevice);
+
+	uint *d_global_sa;
+	cudaMalloc((void**)&d_global_sa, size*sizeof(uint));
+
+	uint *sa = (uint*)malloc(size*sizeof(uint));
+
+    	float time;
+    	cudaEvent_t start;
+    	cudaEvent_t stop;
+    	cudaEventCreate(&start);
+    	cudaEventCreate(&stop);
+	cudaEventRecord(start, 0);
+
+	computeSA(buffer, sa, size);
+
+   	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	printf("skew suffix sort time is %f\n", time);
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+	check_h_order_correctness(sa, buffer, size, size);
+
+	cudaMemcpy(h_sa,  d_global_sa,  size*sizeof(uint), cudaMemcpyDeviceToHost);
+	cudaFree(d_buffer);
+	cudaFree(d_global_sa);
+
+    	fclose (pFile);
+	free(buffer);
+	free(sa);
+}

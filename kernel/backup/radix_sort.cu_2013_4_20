@@ -1,0 +1,225 @@
+/*
+ *
+ * GPU based segment key-value sorter, this sorter is based on one 
+ * implementation of radix sort(www.moderngpu.com)
+ *
+ *     hupmscy@HKUST, Apr 2nd, 2013
+ *
+ */
+
+#include "sufsort_kernel.h"
+
+typedef unsigned int uint;
+
+#define NUM_BITS 5
+#define NUM_BUCKETS (1<< NUM_BITS)
+#define NUM_COUNTERS (1<< NUM_BITS)
+
+//#define NUM_COUNTERS ((NUM_BUCKETS + 3) / 4)
+#define NUM_CHANNELS ((NUM_BUCKETS + 1) / 2)
+#define PACKED_SPACING ((1 == NUM_BITS) ? 16 : 8)
+
+// Only reserve as much shared memory as required - NUM_COUNTERS ints per
+// thread. For 6 == NUM_BITS, this is 16 ints per thread, for 16384 bytes for a
+// 256 thread group, allowing 50% occupancy. All smaller keys give 83% 
+// occupancy, as they are register limited.
+
+#define NUM_THREADS 256
+#define NUM_BLOCK 64
+#define WARP_SIZE 32
+#define NUM_WARPS NUM_THREADS/WARP_SIZE
+#define LOG_WARP_SIZE 5
+#define SHARED_WARP_MEM MAX(WARP_SIZE * NUM_COUNTERS, WARP_SIZE * 2)
+
+#define INNER_LOOP 8
+
+#define DEVICE __device__ __forceinline__
+
+// To sorted_global, write the first key encountered and the last key 
+// encountered in the count block if all all values in the count block are 
+// sorted. If the values aren't all sorted, don't spend the transaction writing
+// to the array.
+
+// NOTE: for 6 == NUM_BITS, high shared memory usage allows only 33% occupancy,
+// when using DETECT_SORTED. It may be possible to instead run the inner loop,
+// then back up two rows of accumulate, and test for sortedness.
+// More work may be required.
+
+
+// Have each warp process a histogram for one block. If the block has
+// NUM_VALUES, each thread process NUM_VALUES / WARP_SIZE. Eg if NUM_VALUES is
+// 2048, each thread process 64 values. This operation is safe for NUM_VALUES up
+// to 4096.
+
+
+// retrieve numBits bits from x starting at bit
+DEVICE uint bfe(uint x, uint bit, uint numBits) {
+	uint ret;
+	asm("bfe.u32 %0, %1, %2, %3;" : "=r"(ret) : "r"(x), "r"(bit), "r"(numBits));
+	return ret;
+}
+
+DEVICE void _swap(volatile uint *& a, volatile uint *& b)
+{
+	volatile uint *tmp = a;
+	a = b;
+	b = tmp;
+}
+
+/**
+ * this kernel uses more than 16 Kb shared memory, make sure cache configuration 
+ * is correct
+ *
+ */
+ __global__ 
+void single_block_radixsort(uint* keys_global, uint* values_global, Partition *par, uint num_interval,  uint bit, uint numElements, uint valPerThread) {
+	
+	uint tid = threadIdx.x;
+	uint lane = (WARP_SIZE - 1) & tid;
+	uint warp = tid / WARP_SIZE;
+	uint block = blockIdx.x;
+	uint interval_start = block * num_interval;
+	uint interval_end = interval_start + num_interval;
+	
+	__shared__ volatile uint counts_shared[NUM_BUCKETS*NUM_THREADS];
+	__shared__ volatile uint shared1[NUM_ELEMENT_SB];
+	__shared__ volatile uint shared2[NUM_ELEMENT_SB];
+	const int ScanStride = WARP_SIZE + WARP_SIZE / 2 + 1;
+//	const int ScanSize = NUM_WARPS * ScanStride;
+	
+	volatile uint* prefix1 = shared1;
+	volatile uint* prefix2 = shared1 + NUM_THREADS + NUM_THREADS/2+1;
+	volatile uint* reduction_shared = shared2;
+	volatile uint* output_keys = shared1;
+	volatile uint* output_values = shared2;
+	volatile uint* s = reduction_shared + ScanStride * warp + lane + WARP_SIZE/2;
+	volatile uint* warpCounters = counts_shared + warp * WARP_SIZE;
+	volatile uint* prefix_ptr1 = prefix1 + NUM_THREADS/2;
+	volatile uint* prefix_ptr2 = prefix2 + NUM_THREADS/2;
+	volatile uint* counters = warpCounters + lane;
+	
+	for (uint p = interval_start; p < interval_end; p++)
+	{	
+	//	__shared__ volatile uint reduction_shared[ScanSize];
+	//	__shared__ volatile uint prefix1[NUM_THREADS + NUM_THREADS/2 + 1];
+	//	__shared__ volatile uint prefix2[NUM_THREADS + NUM_THREADS/2 + 1];
+	//	__shared__ volatile uint output_keys[NUM_ELEMENT_SB];
+	//	__shared__ volatile uint output_values[NUM_ELEMENT_SB];
+	
+		uint warpStart = (p * NUM_WARPS + warp) * (WARP_SIZE * valPerThread);
+		uint* key_start = keys_global + p * NUM_ELEMENT_SB;
+		uint* value_start = values_global + p * NUM_ELEMENT_SB;
+
+		// clear all the counters
+		#pragma unroll
+		for(int i = 0; i < NUM_COUNTERS; ++i)
+			counters[NUM_THREADS * i] = 0;
+	
+		if (tid < NUM_THREADS/2)
+		{
+			prefix1[tid] = 0;
+			prefix2[tid] = 0;
+		}
+		s[-16] = 0;
+
+		uint keys[INNER_LOOP];
+		uint values[INNER_LOOP];
+
+		// Unroll to read 8 values at a time
+	//	uint* warpData = keys_global + warpStart + lane;
+		uint* warpData = keys_global + warpStart + lane*valPerThread;
+
+	//	for(int j = 0; j < valPerThread; ++j) 
+	//		keys[j] = warpData[j * WARP_SIZE];
+	
+		for (int j = 0; j < valPerThread; ++j)
+			keys[j] = warpData[j];
+			
+		warpData = values_global + warpStart + lane*valPerThread;
+
+	//	for (int j = 0; j < valPerThread; ++j)
+	//	values[j] = warpData[j * WARP_SIZE];
+	
+		for (int j = 0; j < valPerThread; ++j)
+			values[j] = warpData[j];
+
+		#pragma unroll
+		for(int j = 0; j < valPerThread; ++j) {
+			uint bucket = bfe(keys[j], bit, NUM_BITS);
+			counters[bucket * NUM_THREADS]++;
+		}
+	
+		__syncthreads();
+
+		//prefix sum
+		#pragma unroll
+		for (uint index = tid; index < NUM_BUCKETS*NUM_THREADS; index += NUM_THREADS)
+		{
+			s[0] = counts_shared[index];
+			uint sum = s[0];
+		
+			#pragma unroll
+			for (uint i = 0; i < LOG_WARP_SIZE; i++)
+			{
+				uint offset = 1 << i;
+				sum += s[-offset];
+				s[0] = sum;
+			}
+			counts_shared[index] = s[0];
+		}
+	
+		__syncthreads();
+		prefix_ptr1[tid] = counts_shared[(tid+1)*WARP_SIZE-1];
+		__syncthreads();
+
+		//inclusive scan
+		#pragma unroll
+		for (uint i = 0; i < 8; i++)
+		{
+			uint offset = 1 << i;
+			prefix_ptr2[tid] = prefix_ptr1[tid] + prefix_ptr1[tid-offset];
+			__syncthreads();
+			_swap(prefix_ptr1, prefix_ptr2);
+		}
+
+		#pragma unroll
+		for (uint index = tid; index < NUM_BUCKETS*NUM_THREADS; index += NUM_THREADS)
+		{
+			uint offset = prefix_ptr1[(index/WARP_SIZE) -1];
+			counts_shared[index] += offset;
+		}
+	
+		__syncthreads();
+	
+		//scatter
+		/*
+		 * there's an alternative here, store bucket or compute bucket
+		 */
+		#pragma unroll
+		for (int i = valPerThread-1; i >=0; i--)
+		{
+			uint bucket = bfe(keys[i], bit, NUM_BITS);
+			uint index = --counters[bucket*NUM_THREADS];
+			output_keys[index] = keys[i];
+			output_values[index] = values[i];
+		}
+
+		__syncthreads();
+
+		#pragma unroll
+		for (uint index = tid; index < NUM_ELEMENT_SB; index += NUM_THREADS)
+		{
+			key_start[index] = output_keys[index];
+			value_start[index] = output_values[index];
+		}
+	}
+}
+
+#undef NUM_BITS
+#undef NUM_BUCKETS
+#undef COUNT_FUNC
+#undef SHARED_WARP_MEM
+#undef COUNT_SHARED_MEM
+#undef PACKED_SPACING
+#undef INNER_LOOP
+#undef sorted_shared 

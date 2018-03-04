@@ -1,0 +1,270 @@
+#include "suffix_array_sorting.h"
+
+__device__ bool compare(unsigned int &ind1, unsigned int &ind2, unsigned int *&rank, unsigned int &k)
+{
+
+     if (rank[ind1] == rank[ind2] && rank[ind1+k] == rank[ind2+k])
+         return true;
+     return false;
+}
+
+__device__ void radix_sort(unsigned int *rank, unsigned int *d_s_k, unsigned int d_size)
+{
+
+	unsigned int digit[10];
+	unsigned int *new_sk;
+	unsigned int *new_rank;
+	unsigned int cache_rank, index;
+	unsigned int size = d_size;
+	int i, count_zero;
+	new_sk = (unsigned int*)malloc(sizeof(unsigned int)*size);
+	new_rank = (unsigned int*)malloc(sizeof(unsigned int)*size);
+	while (true)
+	{
+		
+		memset(digit, 0, INT_SIZE*10);
+		count_zero = 0;
+
+		for (i = 0; i < size; i++)
+		{
+			digit[rank[i]%10]++;
+		}
+		
+		for (i = 1; i < 10; i++)
+			digit[i] += digit[i-1];
+
+		for (i = size-1; i >= 0; i--)
+		{
+			cache_rank = rank[i];
+			index = --digit[cache_rank%10];
+			new_sk[index] = d_s_k[i];
+			cache_rank /= 10;
+			new_rank[index] = cache_rank;
+			if (!cache_rank)
+				count_zero++;
+
+		}
+		memcpy(d_s_k, new_sk, INT_SIZE*size);
+		memcpy(rank, new_rank, INT_SIZE*size);
+		if (count_zero == size)
+			break;
+		
+	}
+	free(new_rank);
+	free(new_sk);
+
+}
+
+__global__ void block_sorting(unsigned int *d_key, unsigned int *d_s_k, unsigned int *d_r_k, unsigned int *d_r_2k, unsigned int *d_block_l, unsigned int *d_block_r, unsigned int *d_block_l_2k, unsigned int *d_block_r_2k, unsigned int *d_update_list, unsigned int *d_count, unsigned int *d_new_count, unsigned int *d_update_count, unsigned int *d_k, unsigned int offset, char *d_ref)
+{
+	unsigned int index = blockIdx.x*blockDim.x+threadIdx.x + offset;
+	if (index >= *d_count)
+		return;
+	unsigned int i, j;
+	unsigned int left = d_block_l[index];
+	unsigned int right = d_block_r[index];
+	unsigned int k = *d_k;
+	unsigned int rank_v;
+	unsigned int l, interval;
+	unsigned int old_value;
+
+	for (i = left; i <= right; i++)
+	{
+		d_key[i] = d_r_k[d_s_k[i]+k];
+	}
+        radix_sort(d_key+left, d_s_k+left, right-left+1);	
+	
+	rank_v = left+1;
+	d_r_2k[d_s_k[left]] = rank_v;
+	for (j = rank_v, l = j-1, interval = 0; j <= right; j++)
+	{     
+		if (compare(d_s_k[j], d_s_k[j-1], d_r_k, k))
+		{	
+			d_r_2k[d_s_k[j]] = rank_v;
+			interval++;
+
+		}
+		else
+		{	       
+			d_r_2k[d_s_k[j]] = ++rank_v;
+			if (interval)
+			{	
+				old_value = atomicInc(d_count+1, _MAX);
+				d_block_l_2k[old_value] = l;
+				d_block_r_2k[old_value] = l+interval;
+			}
+			else
+			{	
+				old_value = atomicInc(d_count+2, _MAX);
+				d_update_list[old_value] = d_s_k[j-1];
+			}
+			interval = 0;
+			l = j;
+		}
+	}
+	if (interval)
+	{
+		old_value = atomicInc(d_count+1, _MAX);
+		d_block_l_2k[old_value] = l;
+		d_block_r_2k[old_value] = l+interval;
+	}
+	else
+	{	
+		old_value = atomicInc(d_count+2, _MAX);
+		d_update_list[old_value] = d_s_k[j-1];
+	}
+}
+
+__global__ void sort_1st_char(char *d_ref, unsigned int *d_st, unsigned int *d_size, unsigned int offset)
+{
+	unsigned int index = blockIdx.x*blockDim.x+threadIdx.x+offset;
+	
+	if (index >= *d_size)
+		return;
+	atomicInc(d_st+(d_ref[index]-OFFSET), _MAX);
+	
+}
+
+__global__ void init_sa_rank(unsigned int *d_s_k, unsigned int *d_r_k, unsigned int *d_st, char *d_ref, unsigned *d_size, unsigned int offset)
+{
+	unsigned int index = blockIdx.x*blockDim.x+threadIdx.x+offset;
+	
+	if (index >= *d_size)
+		return;
+	d_r_k[index] = d_ref[index]-OFFSET+1;
+	unsigned int old = atomicDec(d_st+(d_ref[index]-OFFSET), _MAX);
+	d_s_k[old-1] = index;
+	
+}
+
+__global__ void unique_copy(unsigned int *d_r_k, unsigned int *d_r_2k, unsigned int *d_update_list, unsigned int *update_count, unsigned int offset)
+{
+	unsigned int index = blockIdx.x*blockDim.x+threadIdx.x+offset;
+	if (index >= *update_count)
+		return;
+	unsigned int ind = d_update_list[index];
+	d_r_k[ind] = d_r_2k[ind];
+}
+
+void handle_error(cudaError_t err, unsigned int line)
+{
+	if (err != cudaSuccess)
+		printf("line number: %d %s\n", line, cudaGetErrorString(err));
+}
+
+void swap(unsigned int *&p1, unsigned int *&p2)
+{
+	unsigned int *tmp = p1;
+	p1 = p2;
+	p2 = tmp;
+}
+
+void doubling_sorting_gpu(unsigned int *&s_k, char *&ref, unsigned int& size)
+{
+	unsigned int *d_r_2k, *d_r_k, *d_st, *st, *d_key, *d_s_k;
+	unsigned int i, k, block_count, *d_k;
+	unsigned int *d_block_l, *d_block_r, *d_block_l_2k, *d_block_r_2k, *d_update_list;
+	unsigned int *h_block_l, *h_block_r;
+	unsigned int *count, *d_count; //count[0] for count, count[1] for new_count, count[2] for for update_count
+	unsigned int *d_size;
+	char *d_ref;
+
+	st = (unsigned int*)malloc(INT_SIZE*(ALPHABET_SIZE));
+	h_block_l = (unsigned int*)malloc(INT_SIZE*ALPHABET_SIZE);
+	h_block_r = (unsigned int*)malloc(INT_SIZE*ALPHABET_SIZE);
+	count = (unsigned int*)malloc(INT_SIZE*2);
+
+	memset(h_block_l, 0, INT_SIZE*ALPHABET_SIZE);
+	memset(h_block_r, 0, INT_SIZE*ALPHABET_SIZE);
+
+	HANDLE_ERROR(cudaMalloc(&d_block_l, INT_SIZE*size));
+	HANDLE_ERROR(cudaMalloc(&d_block_r, INT_SIZE*size));
+	HANDLE_ERROR(cudaMalloc(&d_block_l_2k, INT_SIZE*size));
+	HANDLE_ERROR(cudaMalloc(&d_block_r_2k, INT_SIZE*size));
+	HANDLE_ERROR(cudaMalloc(&d_r_k, INT_SIZE*(size+1)));
+	HANDLE_ERROR(cudaMalloc(&d_s_k, INT_SIZE*(size+1)));
+	HANDLE_ERROR(cudaMalloc(&d_r_2k, INT_SIZE*(size+1)));
+	HANDLE_ERROR(cudaMalloc(&d_update_list, INT_SIZE*size));
+	HANDLE_ERROR(cudaMalloc(&d_st, INT_SIZE*ALPHABET_SIZE));
+	HANDLE_ERROR(cudaMalloc(&d_count, INT_SIZE*3));
+	HANDLE_ERROR(cudaMalloc(&d_size, INT_SIZE));
+	HANDLE_ERROR(cudaMalloc(&d_ref, CHAR_SIZE*(size+1)));
+	HANDLE_ERROR(cudaMalloc(&d_key, INT_SIZE*(size)));
+	HANDLE_ERROR(cudaMalloc(&d_k, INT_SIZE));
+
+	HANDLE_ERROR(cudaMemcpy(d_size, &size, INT_SIZE, cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpy(d_ref, ref, CHAR_SIZE*(size+1), cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemset(d_r_k, 0, INT_SIZE*(size+1)));
+	HANDLE_ERROR(cudaMemset(d_r_2k, 0, INT_SIZE*(size+1)));
+	HANDLE_ERROR(cudaMemset(d_st, 0, INT_SIZE*ALPHABET_SIZE));
+
+	for (i = 0; i <= size/THREAD_NUM; i++)
+		sort_1st_char<<<BLOCK_NUM, THREAD_PB>>>(d_ref, d_st, d_size, i*THREAD_NUM);
+
+	HANDLE_ERROR(cudaMemcpy(st, d_st, INT_SIZE*ALPHABET_SIZE, cudaMemcpyDeviceToHost));
+
+	if (st[0])
+	{
+		h_block_r[0] = st[0]-1;
+		block_count = 1;
+	}
+	else
+		block_count = 0;
+	for (i = 1; i < ALPHABET_SIZE; i++)
+	{
+		h_block_l[block_count] = st[i-1];
+		st[i] += st[i-1];
+		if (st[i] == st[i-1])
+			continue;
+		h_block_r[block_count++] = st[i]-1;
+	}
+
+	HANDLE_ERROR(cudaMemcpy(d_block_l, h_block_l, INT_SIZE*ALPHABET_SIZE, cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpy(d_block_r, h_block_r, INT_SIZE*ALPHABET_SIZE, cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpy(d_st, st, INT_SIZE*ALPHABET_SIZE, cudaMemcpyHostToDevice));
+
+	for (i = 0; i <= size/THREAD_NUM; i++)
+		init_sa_rank<<<BLOCK_NUM, THREAD_PB>>>(d_s_k, d_r_k, d_st, d_ref, d_size, i*THREAD_NUM);
+	
+//	HANDLE_ERROR(cudaDeviceSetLimit(cudaLimitMallocHeapSize, 128*1024*1024));
+	count[0] = block_count;
+	HANDLE_ERROR(cudaMemcpy(d_count, count, INT_SIZE, cudaMemcpyHostToDevice));
+
+	for (k = 1; k < size; k*=2)
+	{
+
+		HANDLE_ERROR(cudaMemcpy(d_k, &k, INT_SIZE, cudaMemcpyHostToDevice));
+		HANDLE_ERROR(cudaMemset(d_count+1, 0, INT_SIZE*2));
+		
+		for (i = 0; i<=count[0]/THREAD_NUM; i++)
+			block_sorting<<<BLOCK_NUM, THREAD_PB>>>(d_key, d_s_k, d_r_k, d_r_2k, d_block_l, d_block_r, d_block_l_2k, d_block_r_2k, d_update_list, d_count, d_count+1, d_count+2, d_k, i*THREAD_NUM, d_ref);
+		HANDLE_ERROR(cudaMemcpy(d_count, d_count+1, INT_SIZE, cudaMemcpyDeviceToDevice));
+		HANDLE_ERROR(cudaMemcpy(count, d_count+1, INT_SIZE*2, cudaMemcpyDeviceToHost));
+
+		for (i = 0; i <= count[1]/THREAD_NUM; i++)
+			unique_copy<<<BLOCK_NUM, THREAD_PB>>>(d_r_k, d_r_2k, d_update_list, d_count+2, i*THREAD_NUM);
+		
+		swap(d_r_k, d_r_2k);
+		swap(d_block_l, d_block_l_2k);
+		swap(d_block_r, d_block_r_2k);
+	}
+	HANDLE_ERROR(cudaMemcpy(s_k, d_s_k, INT_SIZE*size, cudaMemcpyDeviceToHost));
+	
+	free(st);
+	free(h_block_l);
+	free(h_block_r);
+	free(count);
+	HANDLE_ERROR(cudaFree(d_block_l));
+	HANDLE_ERROR(cudaFree(d_block_r));
+	HANDLE_ERROR(cudaFree(d_block_l_2k));
+	HANDLE_ERROR(cudaFree(d_block_r_2k));
+	HANDLE_ERROR(cudaFree(d_update_list));
+	HANDLE_ERROR(cudaFree(d_st));
+	HANDLE_ERROR(cudaFree(d_size));
+	HANDLE_ERROR(cudaFree(d_r_k));
+	HANDLE_ERROR(cudaFree(d_r_2k));
+	HANDLE_ERROR(cudaFree(d_s_k));
+	HANDLE_ERROR(cudaFree(d_ref));
+	HANDLE_ERROR(cudaFree(d_key));
+	
+}

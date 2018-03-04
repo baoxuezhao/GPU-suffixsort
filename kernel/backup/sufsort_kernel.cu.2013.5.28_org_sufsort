@@ -1,0 +1,489 @@
+#include "../inc/sufsort_kernel.h"
+#include "../inc/Timer.h"
+
+/*
+ * thrust header
+ */
+#include <thrust/scan.h>
+#include <thrust/device_ptr.h>
+#include <thrust/sort.h>
+#include <thrust/scatter.h>
+#include <thrust/gather.h>
+
+/**
+ * GPU sort header
+ *
+ */
+//#include <b40c/util/error_utils.cuh>
+//#include <b40c/util/multiple_buffering.cuh>
+//#include <b40c/radix_sort/enactor.cuh>
+//#include <b40c_test_util.h>
+
+__global__ void scatter_kernel(uint32 *d_L, uint32 *d_R_in, uint32 *d_R_out, uint32 size)
+{
+	/*
+	 * use shift instead of multiplication(times 4)
+	 */
+	uint32 tid = ((blockIdx.x*blockDim.x + threadIdx.x) << 2);
+	
+	if (tid >= size)
+		return;
+	
+	extern __shared__ uint4 shared_memory[];
+
+	uint4 *R_in = shared_memory;
+	uint4 *L = shared_memory + THREADS_PER_BLOCK;
+
+	R_in[threadIdx.x] = *((uint4*)(d_R_in+tid));
+	L[threadIdx.x] = *((uint4*)(d_L+tid));
+
+	d_R_out[L[threadIdx.x].x] = R_in[threadIdx.x].x;
+	d_R_out[L[threadIdx.x].y] = R_in[threadIdx.x].y;
+	d_R_out[L[threadIdx.x].z] = R_in[threadIdx.x].z;
+	d_R_out[L[threadIdx.x].w] = R_in[threadIdx.x].w;
+
+}
+
+__global__ void generate_bucket_with_shift(uint32 *d_sa, uint32 *d_ref, uint32 *d_isa, uint32 string_size)
+{
+	uint32 tid = (blockIdx.x*blockDim.x + threadIdx.x);
+	uint32 tid4 = tid*4;
+	uint32 cur_block, next_block;
+	
+	//boundary check 
+	if (tid4 >= string_size)
+		return;
+	
+	extern __shared__ uint32 segment_ref[];
+
+	d_sa[tid4] = tid4;
+	d_sa[tid4+1] = tid4+1;
+	d_sa[tid4+2] = tid4+2;
+	d_sa[tid4+3] = tid4+3;
+	
+	cur_block = d_ref[tid];
+
+	//change from little-endian to big-endian
+	cur_block = ((cur_block<<24)|((cur_block&0xff00)<<8)|((cur_block&0xff0000)>>8)|(cur_block>>24));
+
+	segment_ref[threadIdx.x] = cur_block;
+
+	if (threadIdx.x == THREADS_PER_BLOCK-1)
+	{	
+		next_block = d_ref[tid+1];
+		
+		//change from little-endian to big-endian
+		next_block = ((next_block<<24)|((next_block&0xff00)<<8)|((next_block&0xff0000)>>8)|(next_block>>24));
+
+		segment_ref[threadIdx.x+1] = next_block;
+	}
+	__syncthreads();
+	
+	next_block = segment_ref[threadIdx.x+1];
+
+	/*
+	 *  shift operation on little endian system
+	 */
+	d_isa[tid4] = cur_block;
+	d_isa[tid4+1] = ((cur_block << 8) | (next_block >> 24));
+	d_isa[tid4+2] = ((cur_block << 16) | (next_block >> 16));
+	d_isa[tid4+3] = ((cur_block << 24) | (next_block >> 8));
+}
+
+__global__ void generate_bucket_without_shift(uint32 *d_sa, uint8 *d_ref, uint32 *d_isa, uint32 string_size)
+{
+	uint32 tid = (blockIdx.x*blockDim.x + threadIdx.x);
+	uint32 tid4 = tid*4;
+	
+	//boundary check 
+	if (tid4 >= string_size)
+		return;
+	
+	d_sa[tid4] = tid4;
+	d_sa[tid4+1] = tid4+1;
+	d_sa[tid4+2] = tid4+2;
+	d_sa[tid4+3] = tid4+3;
+	
+	uint8* local_d_ref = d_ref+tid4;
+
+	d_isa[tid4] = ((uint32*)local_d_ref)[tid];
+	d_isa[tid4+1] = ((uint32*)(local_d_ref+1))[tid];
+	d_isa[tid4+2] = ((uint32*)(local_d_ref+2))[tid];
+	d_isa[tid4+3] = ((uint32*)(local_d_ref+3))[tid];
+}
+
+__global__ void get_second_keys(uint32 *d_sa, uint32 *d_isa_in, uint32 *d_isa_out, uint32 h_boundary, uint32 size)
+{
+	/*
+	 * use shift instead of multiply (times 4)
+	 */
+	uint32 tid = ((blockIdx.x*blockDim.x + threadIdx.x) << 2);
+	
+	if (tid >= size)
+		return;
+
+	extern __shared__ uint4 shared_memory[];
+
+	uint4* segment_sa = shared_memory;
+	uint4* out = shared_memory + THREADS_PER_BLOCK;
+	uint4* d_out_ptr = (uint4*)(d_isa_out+tid);
+
+	segment_sa[threadIdx.x] = *((uint4*)(d_sa+tid));
+	
+	if (segment_sa[threadIdx.x].x < h_boundary)
+		out[threadIdx.x].x = d_isa_in[segment_sa[threadIdx.x].x];
+
+	if (segment_sa[threadIdx.x].y < h_boundary)
+		out[threadIdx.x].y = d_isa_in[segment_sa[threadIdx.x].y];
+
+	if (segment_sa[threadIdx.x].z < h_boundary)
+		out[threadIdx.x].z = d_isa_in[segment_sa[threadIdx.x].z];
+
+	if (segment_sa[threadIdx.x].w < h_boundary)
+		out[threadIdx.x].w = d_isa_in[segment_sa[threadIdx.x].w];
+
+	*d_out_ptr = out[threadIdx.x];	
+		
+}
+
+__global__ void get_first_keys(uint32 *d_sa, uint32 *d_isa_in, uint32 *d_isa_out, uint32 size)
+{
+	/*
+	 * use shift instead of multiply(times 4)
+	 */
+	uint32 tid = ((blockIdx.x*blockDim.x + threadIdx.x) << 2);
+
+	if (tid >= size)
+		return;
+
+	extern __shared__ uint4 shared_memory[];
+	
+	uint4* out = shared_memory;
+	uint4* segment_sa4 = shared_memory + THREADS_PER_BLOCK;
+	uint4* d_isa_out_ptr = (uint4*)(d_isa_out+tid);
+	
+	segment_sa4[threadIdx.x] = *((uint4*)(d_sa+tid));
+
+	
+	out[threadIdx.x].x = d_isa_in[segment_sa4[threadIdx.x].x];
+	out[threadIdx.x].y = d_isa_in[segment_sa4[threadIdx.x].y];
+	out[threadIdx.x].z = d_isa_in[segment_sa4[threadIdx.x].z];
+	out[threadIdx.x].w = d_isa_in[segment_sa4[threadIdx.x].w];
+
+	*d_isa_out_ptr = out[threadIdx.x];
+}
+
+
+__global__ void neighbour_comparison_kernel1(uint32 *d_sa, uint32 *d_isa_out, uint32 *d_isa_in, uint32 size, uint32 h_order)
+{
+	//times 4
+	uint32 tid = ((blockIdx.x*blockDim.x + threadIdx.x) << 2);
+
+	if (tid >= size)
+		return;
+	
+	extern __shared__ uint4 shared_mem[];
+	uint4* segment_sa4 = shared_mem;
+	uint4* segment_key = shared_mem + THREADS_PER_BLOCK;
+	uint4* out = shared_mem + (THREADS_PER_BLOCK<<1);
+	uint4* d_isa_out_ptr = (uint4*)(d_isa_out+tid);
+
+	segment_key[threadIdx.x] = *((uint4*)(d_isa_out+tid));
+	segment_sa4[threadIdx.x] = *((uint4*)(d_sa+tid));
+	
+	if (tid + 4 < size)	
+	{	
+		if ((segment_key[threadIdx.x].x == segment_key[threadIdx.x].y) && (d_isa_in[segment_sa4[threadIdx.x].x] == d_isa_in[segment_sa4[threadIdx.x].y]))
+			out[threadIdx.x].y = 0;
+		else
+			out[threadIdx.x].y = 1;
+	
+		if ((segment_key[threadIdx.x].y == segment_key[threadIdx.x].z) && (d_isa_in[segment_sa4[threadIdx.x].y] == d_isa_in[segment_sa4[threadIdx.x].z]))
+			out[threadIdx.x].z = 0;
+		else
+			out[threadIdx.x].z = 1;
+	
+		if ((segment_key[threadIdx.x].z == segment_key[threadIdx.x].w) && (d_isa_in[segment_sa4[threadIdx.x].z] == d_isa_in[segment_sa4[threadIdx.x].w]))
+			out[threadIdx.x].w = 0;
+		else
+			out[threadIdx.x].w = 1;
+	
+	}
+	else
+	{
+
+		if ((segment_sa4[threadIdx.x].x + h_order <= size && segment_sa4[threadIdx.x].y + h_order < size   && segment_key[threadIdx.x].x == segment_key[threadIdx.x].y) && (d_isa_in[segment_sa4[threadIdx.x].x] == d_isa_in[segment_sa4[threadIdx.x].y]))
+			out[threadIdx.x].y = 0;
+		else
+			out[threadIdx.x].y = 1;
+	
+		if ((segment_sa4[threadIdx.x].z + h_order <= size && segment_key[threadIdx.x].y == segment_key[threadIdx.x].z) && (d_isa_in[segment_sa4[threadIdx.x].y] == d_isa_in[segment_sa4[threadIdx.x].z]))
+			out[threadIdx.x].z = 0;
+		else
+			out[threadIdx.x].z = 1;
+	
+		if ((segment_sa4[threadIdx.x].w + h_order <= size && segment_key[threadIdx.x].z == segment_key[threadIdx.x].w) && (d_isa_in[segment_sa4[threadIdx.x].z] == d_isa_in[segment_sa4[threadIdx.x].w]))
+			out[threadIdx.x].w = 0;
+		else
+			out[threadIdx.x].w = 1;
+	
+	}
+
+	*d_isa_out_ptr = out[threadIdx.x];
+}
+
+
+__global__ void neighbour_comparison_kernel2(uint32 *d_sa, uint32 *d_isa_out, uint32 *d_isa, uint32 *d_isa_plus_h, uint32 size)
+{
+
+	uint32 tid = (blockIdx.x*blockDim.x + threadIdx.x+1) * 4;
+	
+	if (tid >= size)
+		return;
+
+	extern __shared__ uint2 segment_sa2[];
+
+	segment_sa2[threadIdx.x].x = d_sa[tid-1];
+	segment_sa2[threadIdx.x].y = d_sa[tid];
+
+
+	if ((d_isa[segment_sa2[threadIdx.x].x] == d_isa[segment_sa2[threadIdx.x].y]) && (d_isa_plus_h[segment_sa2[threadIdx.x].x] == d_isa_plus_h[segment_sa2[threadIdx.x].y]))
+		d_isa_out[tid] = 0;
+	else
+		d_isa_out[tid] = 1;
+}
+
+template<typename T>
+inline void swap(T& a, T &b)
+{
+	T tmp = a;
+	a = b;
+	b = tmp;
+}
+
+
+/**
+ * wrapper function of b40c radix sort utility
+ *
+ * sort entries according to d_keys
+ *
+ */
+void gpu_sort(uint32 *d_keys, uint32 *d_values, uint32 size)
+{
+/*
+	b40c::radix_sort::Enactor enactor;
+	b40c::util::DoubleBuffer<uint32, uint32> sort_storage(d_keys, d_values);
+	enactor.Sort(sort_storage, size);
+*/
+	
+	thrust::device_ptr<uint32> d_key_ptr = thrust::device_pointer_cast(d_keys);
+	thrust::device_ptr<uint32> d_value_ptr = thrust::device_pointer_cast(d_values);
+
+	thrust::stable_sort_by_key(d_key_ptr, d_key_ptr+size, d_value_ptr);
+
+	cudaDeviceSynchronize();
+}
+
+void bucket_result(uint32 *d_sa, uint32 *d_isa, uint8* h_ref, uint32 string_size)
+{
+	uint32 *h_sa = (uint32*)allocate_pageable_memory(sizeof(uint32) * string_size);
+	uint32 *h_isa = (uint32*)allocate_pageable_memory(sizeof(uint32) * string_size);
+	mem_device2host(d_sa, h_sa, sizeof(uint32) * string_size);
+	mem_device2host(d_isa, h_isa, sizeof(uint32) * string_size);
+	
+	uint32 start_pos;
+
+	for (uint32 i = 0; i < string_size; i++)
+	{
+		start_pos = h_sa[i];
+		printf("bucket val: %#x, ref val: %#x%x%x%x\n", h_isa[i], h_ref[start_pos], h_ref[start_pos+1], h_ref[start_pos+2], h_ref[start_pos+3]);
+	}
+}
+
+void scatter(uint32 *d_L, uint32 *d_R_in, uint32 *d_R_out, uint32 size)
+{
+	
+	/* 
+	 *my implementation of scatter
+	 */
+	
+	dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
+	dim3 blocks_per_grid(1, 1, 1);
+	
+	uint32 shared_size = THREADS_PER_BLOCK * sizeof(uint32) * 8;
+	blocks_per_grid.x = CEIL(CEIL(size, 4) , threads_per_block.x);
+	
+	scatter_kernel<<<blocks_per_grid, threads_per_block, shared_size>>>(d_L, d_R_in, d_R_out, size);
+	CHECK_KERNEL_ERROR("scatter_kernel");
+	cudaDeviceSynchronize();
+	
+
+	/*thurst scatter operation*/
+/*		
+	thrust::device_ptr<uint32> d_input_ptr = thrust::device_pointer_cast(d_R_in);
+	thrust::device_ptr<uint32> d_output_ptr = thrust::device_pointer_cast(d_R_out);
+	thrust::device_ptr<uint32> d_map_ptr = thrust::device_pointer_cast(d_L);
+
+	thrust::scatter(d_input_ptr, d_input_ptr+size, d_map_ptr, d_output_ptr);
+	cudaDeviceSynchronize();
+*/	
+}
+
+uint32 prefix_sum(uint32 *d_input, uint32 *d_output, uint32 size)
+{
+	uint32 sum = 0;
+	uint32 first_rank = 1;
+
+	mem_host2device(&first_rank, d_input, sizeof(uint32));
+
+	thrust::device_ptr<uint32> d_input_ptr = thrust::device_pointer_cast(d_input);
+	thrust::device_ptr<uint32> d_output_ptr = thrust::device_pointer_cast(d_output);
+
+	thrust::inclusive_scan(d_input_ptr, d_input_ptr+size, d_output_ptr);
+	
+	mem_device2host(d_output+size-1, &sum, sizeof(uint32));
+	
+	return sum;
+}
+
+bool update_isa(uint32 *d_sa, uint32 *d_isa_in, uint32 *d_isa_out, uint32 string_size, uint32 h_order)
+{
+	dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
+	dim3 blocks_per_grid(1, 1, 1);
+	
+	uint32 last_rank = 0;
+	uint32 num_unique = 0;
+	uint32 shared_size = (THREADS_PER_BLOCK) * sizeof(uint32) * 16;
+	blocks_per_grid.x = CEIL(CEIL(string_size, 4) , threads_per_block.x);
+	
+	neighbour_comparison_kernel1<<<blocks_per_grid, threads_per_block, shared_size>>>(d_sa, d_isa_out, d_isa_in+h_order, string_size, h_order);
+	CHECK_KERNEL_ERROR("neighbour_comparision_kernel1");
+
+	neighbour_comparison_kernel2<<<blocks_per_grid, threads_per_block, shared_size>>>(d_sa, d_isa_out, d_isa_in, d_isa_in+h_order, string_size);
+	CHECK_KERNEL_ERROR("neighbour_comparision_kernel2");
+	
+
+	num_unique = prefix_sum(d_isa_out, d_isa_in, string_size);
+	
+#ifdef __DEBUG__
+
+	printf("number of unique ranks: %u\n", num_unique);
+
+#endif		
+
+	if (num_unique == string_size)
+		return true;
+
+	scatter(d_sa, d_isa_in, d_isa_out, string_size);
+	
+	//isa[string_size] should always be 0
+	mem_host2device(&last_rank, d_isa_out+string_size, sizeof(uint32));
+
+	return false;
+}
+
+void derive_2h_order(uint32 *d_sa, uint32 *d_isa_in, uint32 *d_isa_out, uint32 h_order, uint32 string_size)
+{
+	dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
+	dim3 blocks_per_grid(1, 1, 1);
+	
+	uint32 shared_size = (THREADS_PER_BLOCK) * sizeof(uint32) * 8; 
+	blocks_per_grid.x = CEIL(CEIL(string_size, 4), threads_per_block.x);
+	
+	//gather operation
+	get_second_keys<<<blocks_per_grid, threads_per_block, shared_size>>>(d_sa, d_isa_in+h_order, d_isa_out, string_size-h_order+1, string_size);
+	CHECK_KERNEL_ERROR("get_second_keys");
+
+	gpu_sort(d_isa_out, d_sa, string_size);
+
+	//my implementatio of gather operation
+	get_first_keys<<<blocks_per_grid, threads_per_block, shared_size>>>(d_sa, d_isa_in, d_isa_out, string_size);
+	CHECK_KERNEL_ERROR("get_first_keys");
+	
+	/* thurst gather operation*/
+/*			
+	thrust::device_ptr<uint32> d_input_ptr = thrust::device_pointer_cast(d_isa_in);
+	thrust::device_ptr<uint32> d_output_ptr = thrust::device_pointer_cast(d_isa_out);
+	thrust::device_ptr<uint32> d_map_ptr = thrust::device_pointer_cast(d_sa);
+	thrust::gather(d_map_ptr, d_map_ptr+string_size, d_input_ptr, d_output_ptr);
+*/
+	gpu_sort(d_isa_out, d_sa, string_size);
+	
+}
+
+/*
+ * release version
+ */
+void large_sufsort_entry(uint32* h_sa, uint32* h_ref, uint32 string_size)
+{
+	dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
+	dim3 blocks_per_grid(1, 1, 1);
+	
+	uint32 ch_per_uint32 = 4;
+	uint32 shared_size = (THREADS_PER_BLOCK+4) *4; 
+	uint32 size_d_ref = CEIL(string_size, ch_per_uint32);
+	uint32 h_order = ch_per_uint32;
+
+	uint32* d_ref = (uint32*)allocate_device_memory(sizeof(uint32) * size_d_ref);
+	uint32* d_sa = (uint32*)allocate_device_memory(sizeof(uint32) * string_size);
+	uint32* d_isa_in = (uint32*)allocate_device_memory(sizeof(uint32) * string_size);
+	uint32* d_isa_out = (uint32*)allocate_device_memory(sizeof(uint32) * string_size);
+	
+	blocks_per_grid.x = CEIL(CEIL(string_size, ch_per_uint32), threads_per_block.x);
+	
+	/*shared memory configuration*/
+	
+	enum cudaFuncCache pCacheConfig;
+	HANDLE_ERROR(cudaDeviceSetCacheConfig(cudaFuncCachePreferShared));
+	HANDLE_ERROR(cudaDeviceGetCacheConfig(&pCacheConfig));
+
+	if (pCacheConfig == cudaFuncCachePreferNone)
+		printf("cache perference: none \n");
+	else if (pCacheConfig == cudaFuncCachePreferShared)
+		printf("cache perference: shared memory \n");
+	else if (pCacheConfig == cudaFuncCachePreferL1)
+		printf("cache perference: L1 cache \n");
+	else
+	{
+		printf("cache perference: error\n");
+	}
+
+	mem_host2device(h_ref, d_ref, sizeof(uint32) * size_d_ref);
+	
+	Setup(0);
+	Start(0);
+
+	generate_bucket_with_shift<<<blocks_per_grid, threads_per_block, shared_size >>>(d_sa, d_ref, d_isa_in, string_size);
+	CHECK_KERNEL_ERROR("generate_bucket_with_shift");
+	cudaDeviceSynchronize();
+
+	/* sort bucket index stored in d_isa_in*/
+	gpu_sort(d_isa_in, d_sa, string_size);
+
+	/* get 4-order isa  */
+	scatter(d_sa, d_isa_in, d_isa_out, string_size);
+	::swap(d_isa_in, d_isa_out);
+
+	for (; h_order < string_size; h_order *= 2)
+	{
+		derive_2h_order(d_sa, d_isa_in, d_isa_out, h_order, string_size);
+	
+		if(update_isa(d_sa, d_isa_in, d_isa_out, string_size, h_order))
+			break;
+			
+		::swap(d_isa_in, d_isa_out);
+	}
+	Stop(0);
+
+	printf("elapsed time: %.2f s\n", GetElapsedTime(0));
+
+	//transfer output to host memory
+	mem_device2host(d_sa, h_sa, sizeof(uint32) * string_size);
+
+	//free memory
+	free_device_memory(d_ref);
+	free_device_memory(d_sa);
+	free_device_memory(d_isa_in);
+	free_device_memory(d_isa_out);
+}
+

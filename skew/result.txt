@@ -1,0 +1,114 @@
+[bzhaoad@gpu5 skew]$ ./run4.sh
+file size is: 34553758 bytes.
+last char is 84
+string size is 34553759
+num elements mod3 is 0,1,2 is 11517920, 11517920, 11517919
+num_unique is 112, 23035839
+num_unique2 is 260051, 15357226
+num_unique2 is 9282090, 10238151
+num_unique2 is 6599264, 6825434
+num_unique2 is 4407623, 4550290
+num_unique2 is 2939629, 3033527
+num_unique2 is 1960721, 2022352
+num_unique2 is 1308863, 1348235
+num_unique2 is 876006, 898824
+num_unique2 is 590518, 599216
+num_unique2 is 399222, 399478
+num_unique2 is 266319, 266319
+radix sort time is 557.759033
+merge sort time is 894.701538
+rank triplet time is 105.219582
+compute SA time is 68.422333
+others time is 57.287334
+skew suffix sort time is 1754.677002, 1683.389893
+checking sa 34553759, 34553759, 34553759...
+34553759, 34553759, 34553759-order sa result is correct
+file size is: 39422105 bytes.
+last char is 10
+string size is 39422106
+num elements mod3 is 0,1,2 is 13140702, 13140702, 13140702
+num_unique is 133355, 26281404
+num_unique2 is 6479484, 17520936
+num_unique2 is 10508941, 11680624
+num_unique2 is 7556653, 7787083
+num_unique2 is 5135699, 5191389
+num_unique2 is 3449643, 3460926
+num_unique2 is 2305589, 2307284
+num_unique2 is 1537873, 1538190
+num_unique2 is 1025384, 1025460
+num_unique2 is 683636, 683640
+num_unique2 is 455760, 455760
+radix sort time is 656.237366
+merge sort time is 983.374756
+rank triplet time is 106.529747
+compute SA time is 83.506691
+others time is 74.470467
+skew suffix sort time is 1974.064697, 1904.119019
+checking sa 39422106, 39422106, 39422106...
+39422106, 39422106, 39422106-order sa result is correct
+file size is: 105277340 bytes.
+last char is 10
+string size is 105277341
+num elements mod3 is 0,1,2 is 35092447, 35092447, 35092447
+num_unique is 54191, 70184894
+num_unique2 is 12689189, 46789930
+num_unique2 is 29481893, 31193287
+num_unique2 is 19937871, 20795525
+num_unique2 is 13401426, 13863684
+num_unique2 is 9004576, 9242456
+num_unique2 is 6047076, 6161638
+num_unique2 is 4077932, 4107759
+num_unique2 is 2737789, 2738506
+num_unique2 is 1825521, 1825671
+num_unique2 is 1217093, 1217114
+num_unique2 is 811410, 811410
+radix sort time is 1542.349731
+merge sort time is 2995.220215
+rank triplet time is 242.040131
+compute SA time is 223.050003
+others time is 203.043930
+skew suffix sort time is 5278.680176, 5205.703613
+checking sa 105277341, 105277341, 105277341...
+105277341, 105277341, 105277341-order sa result is correct
+file size is: 116421901 bytes.
+last char is 10
+string size is 116421902
+num elements mod3 is 0,1,2 is 38807301, 38807301, 38807300
+num_unique is 159462, 77614601
+num_unique2 is 8113507, 51743068
+num_unique2 is 25569089, 34495379
+num_unique2 is 21262054, 22996920
+num_unique2 is 14936355, 15331280
+num_unique2 is 10132107, 10220854
+num_unique2 is 6812706, 6813903
+num_unique2 is 4542602, 4542602
+radix sort time is 1590.790527
+merge sort time is 3369.332031
+rank triplet time is 274.395752
+compute SA time is 232.659363
+others time is 197.664719
+skew suffix sort time is 5711.700684, 5664.842285
+checking sa 116421902, 116421902, 116421902...
+116421902, 116421902, 116421902-order sa result is correct
+file size is: 109617186 bytes.
+last char is 26
+string size is 109617187
+num elements mod3 is 0,1,2 is 36539063, 36539062, 36539062
+num_unique is 54994, 73078124
+num_unique2 is 13794256, 48718750
+num_unique2 is 17569724, 32479167
+num_unique2 is 16980803, 21652778
+num_unique2 is 13720588, 14435186
+num_unique2 is 9586983, 9623458
+num_unique2 is 6415584, 6415639
+num_unique2 is 4277090, 4277093
+num_unique2 is 2851396, 2851396
+radix sort time is 1414.742432
+merge sort time is 3152.247559
+rank triplet time is 249.562836
+compute SA time is 221.912491
+others time is 198.908844
+skew suffix sort time is 5270.774414, 5237.374512
+checking sa 109617187, 109617187, 109617187...
+109617187, 109617187, 109617187-order sa result is correct
+

@@ -1,0 +1,952 @@
+../data/canterbury/bible.txt  8  1  256  65535
+initial sorting time is 34.562241 (ms)
+unsorted group sorting time is 49.138912 (ms)
+total suffix sorting time is 83.701157 (ms)
+s-type, m-type and l-type sorting time are 9.991167, 4.641665, 0.017824
+get sorting key time is 10.245920
+group processing time is 28.503677 (ms)
+deriving ISA time is 20.875166 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+
+../data/canterbury/bible.txt  8  1  512  65535
+initial sorting time is 37.332161 (ms)
+unsorted group sorting time is 58.812737 (ms)
+total suffix sorting time is 96.144897 (ms)
+s-type, m-type and l-type sorting time are 14.217919, 5.099744, 0.018496
+get sorting key time is 12.481985
+group processing time is 33.477921 (ms)
+deriving ISA time is 22.678848 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+
+../data/canterbury/bible.txt  8  1  1024  65535
+initial sorting time is 34.353153 (ms)
+unsorted group sorting time is 56.268353 (ms)
+total suffix sorting time is 90.621506 (ms)
+s-type, m-type and l-type sorting time are 16.002272, 2.819968, 0.018016
+get sorting key time is 10.405696
+group processing time is 30.376417 (ms)
+deriving ISA time is 21.602272 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  1  2048  65535
+initial sorting time is 34.112415 (ms)
+unsorted group sorting time is 53.430050 (ms)
+total suffix sorting time is 87.542465 (ms)
+s-type, m-type and l-type sorting time are 18.376383, 1.550016, 0.015936
+get sorting key time is 9.598400
+group processing time is 27.335072 (ms)
+deriving ISA time is 20.611458 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  2  256  65535
+initial sorting time is 33.831615 (ms)
+unsorted group sorting time is 78.593216 (ms)
+total suffix sorting time is 112.424835 (ms)
+s-type, m-type and l-type sorting time are 9.969376, 9.120223, 0.016672
+get sorting key time is 16.481920
+group processing time is 44.187332 (ms)
+deriving ISA time is 27.662592 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  2  512  65535
+initial sorting time is 34.138432 (ms)
+unsorted group sorting time is 78.125923 (ms)
+total suffix sorting time is 112.264359 (ms)
+s-type, m-type and l-type sorting time are 14.092576, 4.903520, 0.015488
+get sorting key time is 15.577888
+group processing time is 44.054756 (ms)
+deriving ISA time is 27.848446 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  2  1024  65535
+initial sorting time is 33.852673 (ms)
+unsorted group sorting time is 77.597244 (ms)
+total suffix sorting time is 111.449921 (ms)
+s-type, m-type and l-type sorting time are 15.975999, 3.342336, 0.016256
+get sorting key time is 15.269825
+group processing time is 43.535744 (ms)
+deriving ISA time is 27.535522 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  2  2048  65535
+initial sorting time is 33.937153 (ms)
+unsorted group sorting time is 79.126877 (ms)
+total suffix sorting time is 113.064026 (ms)
+s-type, m-type and l-type sorting time are 18.384800, 2.556704, 0.017408
+get sorting key time is 15.130368
+group processing time is 43.133347 (ms)
+deriving ISA time is 28.006624 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  1  256  8192
+initial sorting time is 33.772575 (ms)
+unsorted group sorting time is 46.719391 (ms)
+total suffix sorting time is 80.491966 (ms)
+s-type, m-type and l-type sorting time are 10.016832, 3.669280, 0.555296
+get sorting key time is 9.697600
+group processing time is 26.442942 (ms)
+deriving ISA time is 20.138050 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  1  256  16384
+initial sorting time is 34.165791 (ms)
+unsorted group sorting time is 48.439007 (ms)
+total suffix sorting time is 82.604797 (ms)
+s-type, m-type and l-type sorting time are 10.020959, 5.314176, 0.016256
+get sorting key time is 9.953761
+group processing time is 26.824896 (ms)
+deriving ISA time is 20.798977 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  1  256  32768
+initial sorting time is 33.738174 (ms)
+unsorted group sorting time is 48.546242 (ms)
+total suffix sorting time is 82.284416 (ms)
+s-type, m-type and l-type sorting time are 9.979455, 4.799808, 0.016800
+get sorting key time is 9.692097
+group processing time is 27.299105 (ms)
+deriving ISA time is 20.634815 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  1  256  65535
+initial sorting time is 34.012577 (ms)
+unsorted group sorting time is 48.810368 (ms)
+total suffix sorting time is 82.822945 (ms)
+s-type, m-type and l-type sorting time are 10.022849, 5.061856, 0.016288
+get sorting key time is 10.040352
+group processing time is 26.815742 (ms)
+deriving ISA time is 21.309792 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/bible.txt  8  1  256  131070
+initial sorting time is 34.055489 (ms)
+unsorted group sorting time is 49.254208 (ms)
+total suffix sorting time is 83.309692 (ms)
+s-type, m-type and l-type sorting time are 9.990528, 4.749984, 0.017248
+get sorting key time is 10.282687
+group processing time is 28.081921 (ms)
+deriving ISA time is 20.813408 (ms)
+checking 4047393-order sa...
+total 32 threads for checking
+4047393-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  1  256  65535
+initial sorting time is 41.326466 (ms)
+unsorted group sorting time is 73.168060 (ms)
+total suffix sorting time is 114.494522 (ms)
+s-type, m-type and l-type sorting time are 13.827072, 4.487264, 0.024160
+get sorting key time is 16.110559
+group processing time is 46.858105 (ms)
+deriving ISA time is 27.446369 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  1  512  65535
+initial sorting time is 41.480034 (ms)
+unsorted group sorting time is 66.499199 (ms)
+total suffix sorting time is 107.979233 (ms)
+s-type, m-type and l-type sorting time are 20.098623, 1.157056, 0.025664
+get sorting key time is 13.505665
+group processing time is 38.609795 (ms)
+deriving ISA time is 25.091618 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  1  1024  65535
+initial sorting time is 37.856224 (ms)
+unsorted group sorting time is 94.795746 (ms)
+total suffix sorting time is 132.651978 (ms)
+s-type, m-type and l-type sorting time are 19.947554, 0.035936, 0.022848
+get sorting key time is 18.492352
+group processing time is 55.542873 (ms)
+deriving ISA time is 35.608219 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  1  2048  65535
+initial sorting time is 38.454910 (ms)
+unsorted group sorting time is 95.521408 (ms)
+total suffix sorting time is 133.976318 (ms)
+s-type, m-type and l-type sorting time are 21.150816, 0.038784, 0.023136
+get sorting key time is 18.379553
+group processing time is 56.099773 (ms)
+deriving ISA time is 35.049728 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  2  256  65535
+initial sorting time is 38.340481 (ms)
+unsorted group sorting time is 89.184128 (ms)
+total suffix sorting time is 127.524612 (ms)
+s-type, m-type and l-type sorting time are 13.890273, 3.665696, 0.019104
+get sorting key time is 19.989599
+group processing time is 53.792767 (ms)
+deriving ISA time is 32.856480 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  2  512  65535
+initial sorting time is 38.063904 (ms)
+unsorted group sorting time is 92.562721 (ms)
+total suffix sorting time is 130.626617 (ms)
+s-type, m-type and l-type sorting time are 20.119810, 0.219008, 0.020544
+get sorting key time is 16.187424
+group processing time is 50.327774 (ms)
+deriving ISA time is 36.877567 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  2  1024  65535
+initial sorting time is 40.642368 (ms)
+unsorted group sorting time is 86.737022 (ms)
+total suffix sorting time is 127.379395 (ms)
+s-type, m-type and l-type sorting time are 19.856226, 0.025056, 0.021376
+get sorting key time is 16.337282
+group processing time is 52.185062 (ms)
+deriving ISA time is 32.540508 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  2  2048  65535
+initial sorting time is 38.108158 (ms)
+unsorted group sorting time is 88.022911 (ms)
+total suffix sorting time is 126.131073 (ms)
+s-type, m-type and l-type sorting time are 21.105536, 0.022336, 0.021792
+get sorting key time is 16.219328
+group processing time is 49.712418 (ms)
+deriving ISA time is 32.547039 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  1  256  8192
+initial sorting time is 40.820927 (ms)
+unsorted group sorting time is 58.960354 (ms)
+total suffix sorting time is 99.781281 (ms)
+s-type, m-type and l-type sorting time are 13.902335, 3.270240, 0.021504
+get sorting key time is 10.967584
+group processing time is 34.568291 (ms)
+deriving ISA time is 24.183424 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  1  256  16384
+initial sorting time is 38.048512 (ms)
+unsorted group sorting time is 59.725185 (ms)
+total suffix sorting time is 97.773697 (ms)
+s-type, m-type and l-type sorting time are 13.859648, 3.250912, 0.024416
+get sorting key time is 11.062944
+group processing time is 35.123234 (ms)
+deriving ISA time is 24.018078 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  1  256  32768
+initial sorting time is 38.551487 (ms)
+unsorted group sorting time is 60.544544 (ms)
+total suffix sorting time is 99.096031 (ms)
+s-type, m-type and l-type sorting time are 13.860288, 3.694144, 0.022336
+get sorting key time is 11.238528
+group processing time is 36.083389 (ms)
+deriving ISA time is 23.885599 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  1  256  65535
+initial sorting time is 41.015648 (ms)
+unsorted group sorting time is 71.960030 (ms)
+total suffix sorting time is 112.975677 (ms)
+s-type, m-type and l-type sorting time are 13.905505, 4.350208, 0.024192
+get sorting key time is 14.108065
+group processing time is 46.122272 (ms)
+deriving ISA time is 26.320255 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/canterbury/E.coli  8  1  256  131070
+initial sorting time is 38.956799 (ms)
+unsorted group sorting time is 63.449055 (ms)
+total suffix sorting time is 102.405853 (ms)
+s-type, m-type and l-type sorting time are 13.871007, 4.002848, 0.023808
+get sorting key time is 12.719457
+group processing time is 37.829914 (ms)
+deriving ISA time is 25.062977 (ms)
+checking 4638691-order sa...
+total 32 threads for checking
+4638691-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  1  256  65535
+initial sorting time is 305.430603 (ms)
+unsorted group sorting time is 379.646606 (ms)
+total suffix sorting time is 685.077209 (ms)
+s-type, m-type and l-type sorting time are 78.752350, 63.922276, 17.829885
+get sorting key time is 22.598303
+group processing time is 134.163483 (ms)
+deriving ISA time is 200.467621 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  1  512  65535
+initial sorting time is 310.467712 (ms)
+unsorted group sorting time is 426.484894 (ms)
+total suffix sorting time is 736.952637 (ms)
+s-type, m-type and l-type sorting time are 114.918945, 60.586109, 18.699141
+get sorting key time is 26.363520
+group processing time is 146.736282 (ms)
+deriving ISA time is 204.397385 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  1  1024  65535
+initial sorting time is 305.177094 (ms)
+unsorted group sorting time is 422.254669 (ms)
+total suffix sorting time is 727.431763 (ms)
+s-type, m-type and l-type sorting time are 132.043396, 52.099937, 18.417183
+get sorting key time is 22.555870
+group processing time is 134.548553 (ms)
+deriving ISA time is 200.747696 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  1  2048  65535
+initial sorting time is 304.905182 (ms)
+unsorted group sorting time is 448.756897 (ms)
+total suffix sorting time is 753.662109 (ms)
+s-type, m-type and l-type sorting time are 158.523941, 44.829567, 17.789312
+get sorting key time is 25.377155
+group processing time is 140.907150 (ms)
+deriving ISA time is 201.971542 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  2  256  65535
+initial sorting time is 303.852722 (ms)
+unsorted group sorting time is 535.229858 (ms)
+total suffix sorting time is 839.082581 (ms)
+s-type, m-type and l-type sorting time are 78.576096, 184.472183, 17.786366
+get sorting key time is 52.125790
+group processing time is 142.740631 (ms)
+deriving ISA time is 201.188156 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  2  512  65535
+initial sorting time is 304.270660 (ms)
+unsorted group sorting time is 521.785217 (ms)
+total suffix sorting time is 826.055908 (ms)
+s-type, m-type and l-type sorting time are 114.860413, 133.298630, 17.799971
+get sorting key time is 52.206619
+group processing time is 145.980133 (ms)
+deriving ISA time is 200.958603 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  2  1024  65535
+initial sorting time is 305.085785 (ms)
+unsorted group sorting time is 523.614136 (ms)
+total suffix sorting time is 828.699951 (ms)
+s-type, m-type and l-type sorting time are 131.931137, 108.732346, 18.323101
+get sorting key time is 51.354301
+group processing time is 155.209396 (ms)
+deriving ISA time is 204.977753 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  2  2048  65535
+initial sorting time is 304.665955 (ms)
+unsorted group sorting time is 520.008423 (ms)
+total suffix sorting time is 824.674377 (ms)
+s-type, m-type and l-type sorting time are 158.591049, 95.401619, 17.751486
+get sorting key time is 45.695900
+group processing time is 144.360245 (ms)
+deriving ISA time is 201.845444 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  1  256  8192
+initial sorting time is 304.700165 (ms)
+unsorted group sorting time is 414.305237 (ms)
+total suffix sorting time is 719.005371 (ms)
+s-type, m-type and l-type sorting time are 78.670975, 39.130848, 67.660652
+get sorting key time is 31.872894
+group processing time is 131.387054 (ms)
+deriving ISA time is 201.774551 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  1  256  16384
+initial sorting time is 305.177399 (ms)
+unsorted group sorting time is 393.466614 (ms)
+total suffix sorting time is 698.644043 (ms)
+s-type, m-type and l-type sorting time are 78.550880, 46.351868, 43.569214
+get sorting key time is 28.682819
+group processing time is 133.543533 (ms)
+deriving ISA time is 200.640823 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  1  256  32768
+initial sorting time is 303.936279 (ms)
+unsorted group sorting time is 384.331238 (ms)
+total suffix sorting time is 688.267517 (ms)
+s-type, m-type and l-type sorting time are 78.505020, 53.121784, 30.061668
+get sorting key time is 25.525122
+group processing time is 132.899628 (ms)
+deriving ISA time is 200.190323 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  1  256  65535
+initial sorting time is 303.783478 (ms)
+unsorted group sorting time is 383.088654 (ms)
+total suffix sorting time is 686.872131 (ms)
+s-type, m-type and l-type sorting time are 78.414848, 64.580429, 17.754723
+get sorting key time is 22.572449
+group processing time is 134.994659 (ms)
+deriving ISA time is 201.616318 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/silesia/webster  8  1  256  131072
+initial sorting time is 304.237610 (ms)
+unsorted group sorting time is 373.094452 (ms)
+total suffix sorting time is 677.332031 (ms)
+s-type, m-type and l-type sorting time are 78.619514, 75.807770, 6.432544
+get sorting key time is 18.454689
+group processing time is 131.808090 (ms)
+deriving ISA time is 199.225525 (ms)
+checking 41458704-order sa...
+total 32 threads for checking
+41458704-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  1  256  65535
+initial sorting time is 292.000061 (ms)
+unsorted group sorting time is 453.755951 (ms)
+total suffix sorting time is 745.755981 (ms)
+s-type, m-type and l-type sorting time are 121.723976, 26.990044, 8.251040
+get sorting key time is 47.859360
+group processing time is 178.830032 (ms)
+deriving ISA time is 226.097122 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  1  512  65535
+initial sorting time is 291.086304 (ms)
+unsorted group sorting time is 481.838715 (ms)
+total suffix sorting time is 772.925049 (ms)
+s-type, m-type and l-type sorting time are 158.552383, 18.530787, 7.685025
+get sorting key time is 45.877529
+group processing time is 177.710709 (ms)
+deriving ISA time is 227.411423 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  1  1024  65535
+initial sorting time is 290.303162 (ms)
+unsorted group sorting time is 482.091461 (ms)
+total suffix sorting time is 772.394653 (ms)
+s-type, m-type and l-type sorting time are 170.397385, 13.748351, 6.930496
+get sorting key time is 48.364861
+group processing time is 174.729904 (ms)
+deriving ISA time is 224.156570 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  1  2048  65535
+initial sorting time is 291.307648 (ms)
+unsorted group sorting time is 493.071350 (ms)
+total suffix sorting time is 784.379028 (ms)
+s-type, m-type and l-type sorting time are 187.241806, 10.395807, 7.260736
+get sorting key time is 44.330181
+group processing time is 172.333633 (ms)
+deriving ISA time is 224.016312 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  2  256  65535
+initial sorting time is 291.111298 (ms)
+unsorted group sorting time is 559.471130 (ms)
+total suffix sorting time is 850.582397 (ms)
+s-type, m-type and l-type sorting time are 121.944252, 105.635399, 7.896224
+get sorting key time is 57.628063
+group processing time is 195.669540 (ms)
+deriving ISA time is 227.556198 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  2  512  65535
+initial sorting time is 289.895630 (ms)
+unsorted group sorting time is 543.675781 (ms)
+total suffix sorting time is 833.571411 (ms)
+s-type, m-type and l-type sorting time are 158.704742, 59.304611, 7.483457
+get sorting key time is 56.880157
+group processing time is 191.847137 (ms)
+deriving ISA time is 227.588501 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  2  1024  65535
+initial sorting time is 290.928192 (ms)
+unsorted group sorting time is 555.943970 (ms)
+total suffix sorting time is 846.872192 (ms)
+s-type, m-type and l-type sorting time are 170.359741, 41.038139, 7.495232
+get sorting key time is 55.728165
+group processing time is 203.797195 (ms)
+deriving ISA time is 237.195389 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  2  2048  65535
+initial sorting time is 291.145081 (ms)
+unsorted group sorting time is 560.583923 (ms)
+total suffix sorting time is 851.729004 (ms)
+s-type, m-type and l-type sorting time are 187.240326, 33.879169, 8.204576
+get sorting key time is 55.792091
+group processing time is 205.591171 (ms)
+deriving ISA time is 230.971130 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  1  256  8192
+initial sorting time is 290.310822 (ms)
+unsorted group sorting time is 445.084991 (ms)
+total suffix sorting time is 735.395813 (ms)
+s-type, m-type and l-type sorting time are 121.759613, 24.017565, 10.033856
+get sorting key time is 44.988674
+group processing time is 172.665619 (ms)
+deriving ISA time is 223.808456 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  1  256  16384
+initial sorting time is 289.682251 (ms)
+unsorted group sorting time is 449.159821 (ms)
+total suffix sorting time is 738.842041 (ms)
+s-type, m-type and l-type sorting time are 122.099770, 23.997667, 8.684351
+get sorting key time is 45.462654
+group processing time is 176.366211 (ms)
+deriving ISA time is 224.719971 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  1  256  32768
+initial sorting time is 290.678833 (ms)
+unsorted group sorting time is 451.501373 (ms)
+total suffix sorting time is 742.180176 (ms)
+s-type, m-type and l-type sorting time are 121.869087, 24.986593, 8.799744
+get sorting key time is 46.543423
+group processing time is 177.867844 (ms)
+deriving ISA time is 225.607315 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  1  256  65535
+initial sorting time is 290.915619 (ms)
+unsorted group sorting time is 448.594482 (ms)
+total suffix sorting time is 739.510132 (ms)
+s-type, m-type and l-type sorting time are 121.997238, 25.073309, 7.316192
+get sorting key time is 46.577122
+group processing time is 174.838654 (ms)
+deriving ISA time is 227.069504 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/howto  8  1  256  131070
+initial sorting time is 291.958893 (ms)
+unsorted group sorting time is 445.657013 (ms)
+total suffix sorting time is 737.615906 (ms)
+s-type, m-type and l-type sorting time are 121.929741, 26.780676, 8.013887
+get sorting key time is 46.240547
+group processing time is 174.716217 (ms)
+deriving ISA time is 223.580780 (ms)
+checking 39422106-order sa...
+total 32 threads for checking
+39422106-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  1  256  65535
+initial sorting time is 844.435303 (ms)
+unsorted group sorting time is 1686.744507 (ms)
+total suffix sorting time is 2531.179688 (ms)
+s-type, m-type and l-type sorting time are 414.099915, 179.614014, 51.217148
+get sorting key time is 135.675629
+group processing time is 527.260681 (ms)
+deriving ISA time is 795.226807 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  1  512  65535
+initial sorting time is 844.390442 (ms)
+unsorted group sorting time is 1807.336548 (ms)
+total suffix sorting time is 2651.727051 (ms)
+s-type, m-type and l-type sorting time are 560.348145, 156.591568, 51.255455
+get sorting key time is 132.816513
+group processing time is 525.328308 (ms)
+deriving ISA time is 794.871643 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  1  1024  65535
+initial sorting time is 845.427185 (ms)
+unsorted group sorting time is 1876.181763 (ms)
+total suffix sorting time is 2721.608887 (ms)
+s-type, m-type and l-type sorting time are 658.805542, 117.984779, 51.703331
+get sorting key time is 133.236404
+group processing time is 531.203857 (ms)
+deriving ISA time is 797.310547 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  1  2048  65535
+initial sorting time is 844.610168 (ms)
+unsorted group sorting time is 1946.796387 (ms)
+total suffix sorting time is 2791.406494 (ms)
+s-type, m-type and l-type sorting time are 761.858093, 86.132896, 51.798012
+get sorting key time is 133.531067
+group processing time is 526.928833 (ms)
+deriving ISA time is 801.165344 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  2  256  65535
+initial sorting time is 845.282715 (ms)
+unsorted group sorting time is 2182.294434 (ms)
+total suffix sorting time is 3027.577148 (ms)
+s-type, m-type and l-type sorting time are 414.094513, 599.997070, 52.541084
+get sorting key time is 203.582108
+group processing time is 532.705933 (ms)
+deriving ISA time is 795.728882 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  2  512  65535
+initial sorting time is 844.696838 (ms)
+unsorted group sorting time is 2111.726562 (ms)
+total suffix sorting time is 2956.423340 (ms)
+s-type, m-type and l-type sorting time are 559.918518, 390.071289, 51.630779
+get sorting key time is 193.690994
+group processing time is 536.275024 (ms)
+deriving ISA time is 798.455261 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  2  1024  65535
+initial sorting time is 849.279175 (ms)
+unsorted group sorting time is 2038.908569 (ms)
+total suffix sorting time is 2888.187744 (ms)
+s-type, m-type and l-type sorting time are 658.963867, 235.877945, 51.533405
+get sorting key time is 177.069214
+group processing time is 535.473267 (ms)
+deriving ISA time is 797.192749 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  2  2048  65535
+initial sorting time is 845.667908 (ms)
+unsorted group sorting time is 2073.569580 (ms)
+total suffix sorting time is 2919.237549 (ms)
+s-type, m-type and l-type sorting time are 761.765747, 185.694702, 51.576031
+get sorting key time is 163.587555
+group processing time is 529.916931 (ms)
+deriving ISA time is 795.188477 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  1  256  8192
+initial sorting time is 845.189087 (ms)
+unsorted group sorting time is 1757.238281 (ms)
+total suffix sorting time is 2602.427246 (ms)
+s-type, m-type and l-type sorting time are 414.308624, 143.910645, 146.192627
+get sorting key time is 144.445038
+group processing time is 524.848633 (ms)
+deriving ISA time is 796.534180 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  1  256  16384
+initial sorting time is 844.857666 (ms)
+unsorted group sorting time is 1705.398560 (ms)
+total suffix sorting time is 2550.256348 (ms)
+s-type, m-type and l-type sorting time are 414.132507, 159.874130, 83.679619
+get sorting key time is 138.451675
+group processing time is 526.785950 (ms)
+deriving ISA time is 795.254211 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  1  256  32768
+initial sorting time is 844.454041 (ms)
+unsorted group sorting time is 1695.174927 (ms)
+total suffix sorting time is 2539.628906 (ms)
+s-type, m-type and l-type sorting time are 413.950043, 170.661163, 63.612286
+get sorting key time is 135.378036
+group processing time is 528.664917 (ms)
+deriving ISA time is 796.420898 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+../data/manzini/rfc  8  1  256  65535
+initial sorting time is 848.306885 (ms)
+unsorted group sorting time is 1691.249512 (ms)
+total suffix sorting time is 2539.556396 (ms)
+s-type, m-type and l-type sorting time are 413.876007, 182.753342, 51.682274
+get sorting key time is 132.883972
+group processing time is 529.898987 (ms)
+deriving ISA time is 796.260437 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rfc  8  1  256  131070
+initial sorting time is 846.693665 (ms)
+unsorted group sorting time is 1693.240112 (ms)
+total suffix sorting time is 2539.933838 (ms)
+s-type, m-type and l-type sorting time are 414.307526, 187.502640, 47.500450
+get sorting key time is 134.152420
+group processing time is 530.586914 (ms)
+deriving ISA time is 795.915100 (ms)
+checking 116421902-order sa...
+total 32 threads for checking
+116421902-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  1  256  65535
+initial sorting time is 837.342773 (ms)
+unsorted group sorting time is 2476.770020 (ms)
+total suffix sorting time is 3314.112793 (ms)
+s-type, m-type and l-type sorting time are 422.156494, 350.186371, 211.942780
+get sorting key time is 155.421661
+group processing time is 692.170959 (ms)
+deriving ISA time is 1060.244873 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  1  512  65535
+initial sorting time is 842.636292 (ms)
+unsorted group sorting time is 2643.788574 (ms)
+total suffix sorting time is 3486.424805 (ms)
+s-type, m-type and l-type sorting time are 606.795898, 321.204620, 212.404282
+get sorting key time is 156.815704
+group processing time is 704.047546 (ms)
+deriving ISA time is 1062.553833 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  1  1024  65535
+initial sorting time is 837.217590 (ms)
+unsorted group sorting time is 2679.642578 (ms)
+total suffix sorting time is 3516.860107 (ms)
+s-type, m-type and l-type sorting time are 681.640625, 291.982910, 212.255127
+get sorting key time is 153.358826
+group processing time is 691.388306 (ms)
+deriving ISA time is 1060.160522 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  1  2048  65535
+initial sorting time is 838.227173 (ms)
+unsorted group sorting time is 2950.587891 (ms)
+total suffix sorting time is 3788.814941 (ms)
+s-type, m-type and l-type sorting time are 843.500793, 257.684937, 347.047302
+get sorting key time is 155.961319
+group processing time is 696.668884 (ms)
+deriving ISA time is 1063.802124 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  2  256  65535
+initial sorting time is 835.929932 (ms)
+unsorted group sorting time is 3391.670898 (ms)
+total suffix sorting time is 4227.600586 (ms)
+s-type, m-type and l-type sorting time are 421.837677, 1121.733032, 211.331711
+get sorting key time is 293.166870
+group processing time is 693.868713 (ms)
+deriving ISA time is 1059.913452 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  2  512  65535
+initial sorting time is 836.496582 (ms)
+unsorted group sorting time is 3272.471924 (ms)
+total suffix sorting time is 4108.968750 (ms)
+s-type, m-type and l-type sorting time are 606.672424, 833.362976, 211.193497
+get sorting key time is 281.117279
+group processing time is 690.517029 (ms)
+deriving ISA time is 1059.835938 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  2  1024  65535
+initial sorting time is 837.277283 (ms)
+unsorted group sorting time is 3211.439209 (ms)
+total suffix sorting time is 4048.716553 (ms)
+s-type, m-type and l-type sorting time are 681.557434, 706.237671, 211.952454
+get sorting key time is 270.723145
+group processing time is 692.355774 (ms)
+deriving ISA time is 1059.554077 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  2  2048  65535
+initial sorting time is 835.282898 (ms)
+unsorted group sorting time is 3270.182617 (ms)
+total suffix sorting time is 4105.465332 (ms)
+s-type, m-type and l-type sorting time are 843.349182, 617.992554, 212.058914
+get sorting key time is 256.430450
+group processing time is 691.227966 (ms)
+deriving ISA time is 1059.498901 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  1  256  8192
+initial sorting time is 838.617188 (ms)
+unsorted group sorting time is 2713.609619 (ms)
+total suffix sorting time is 3552.226807 (ms)
+s-type, m-type and l-type sorting time are 421.996063, 176.144272, 553.396912
+get sorting key time is 227.354034
+group processing time is 686.671814 (ms)
+deriving ISA time is 1059.475708 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  1  256  16384
+initial sorting time is 837.000305 (ms)
+unsorted group sorting time is 2597.462158 (ms)
+total suffix sorting time is 3434.462402 (ms)
+s-type, m-type and l-type sorting time are 422.033813, 219.305573, 408.981293
+get sorting key time is 210.077850
+group processing time is 687.597473 (ms)
+deriving ISA time is 1059.686279 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  1  256  32768
+initial sorting time is 836.545898 (ms)
+unsorted group sorting time is 2583.942871 (ms)
+total suffix sorting time is 3420.488770 (ms)
+s-type, m-type and l-type sorting time are 421.824982, 229.571487, 389.789795
+get sorting key time is 205.909988
+group processing time is 687.667603 (ms)
+deriving ISA time is 1058.925659 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  1  256  65535
+initial sorting time is 837.004150 (ms)
+unsorted group sorting time is 2474.409912 (ms)
+total suffix sorting time is 3311.414062 (ms)
+s-type, m-type and l-type sorting time are 421.856934, 350.769257, 212.312286
+get sorting key time is 151.886948
+group processing time is 688.710388 (ms)
+deriving ISA time is 1059.394897 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------
+
+../data/manzini/rctail96  8  1  256  131070
+initial sorting time is 836.176819 (ms)
+unsorted group sorting time is 2452.218994 (ms)
+total suffix sorting time is 3288.395752 (ms)
+s-type, m-type and l-type sorting time are 421.997162, 399.622528, 162.794601
+get sorting key time is 133.277283
+group processing time is 686.108521 (ms)
+deriving ISA time is 1059.029907 (ms)
+checking 114711152-order sa...
+total 32 threads for checking
+114711152-order sa result is correct
+----------------------------------------------------------------

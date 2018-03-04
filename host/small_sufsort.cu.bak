@@ -1,0 +1,1373 @@
+#include "../inc/sufsort_kernel.cuh"
+#include "../inc/segscan.cuh"
+#include "../inc/radix_split.h"
+
+#include <thrust/count.h>
+#include <thrust/transform.h>
+#include <thrust/functional.h>
+#include <thrust/scan.h>
+#include <thrust/device_ptr.h>
+#include <thrust/execution_policy.h>
+#include <thrust/sort.h>
+#include <thrust/unique.h>
+
+#include <time.h>
+#include <iostream>
+#include <fstream>
+//#include <cudpp.h>
+//#include <cudpp_globals.h>
+
+#include <cub/cub.cuh>
+
+//#include <b40c/util/multiple_buffering.cuh>
+//#include <b40c/radix_sort/enactor.cuh>
+
+#define BLOCK_ID (gridDim.y * blockIdx.x + blockIdx.y)
+#define THREAD_ID (threadIdx.x)
+#define TID (BLOCK_ID * blockDim.x + THREAD_ID)
+
+typedef thrust::device_ptr<uint32> thrust_uint_p;
+
+//#define CONSECUTIVE_ISA
+
+//using namespace mgpu;
+
+//mgpu::ContextPtr context;
+//CUDPPHandle theCudpp = 0;
+//CUDPPHandle scanplan = 0;
+
+float 	stage1 = 0.0;
+float 	stage2 = 0.0;
+float	bucketprocess = 0.0;
+float	bucketsort = 0.0;
+float	bitonic = 0.0;
+float	singleradix = 0.0;
+float	multiblockradix = 0.0;
+float	radix = 0.0;
+float 	isa = 0.0;
+float	get2ndkey = 0.0;
+float	findbdry = 0.0;
+float	stagetwo = 0.0;
+
+float 	isa_mark = 0.0;
+float 	isa_sum = 0.0;
+float 	isa_scatter = 0.0;
+float	sorttest = 0.0;
+
+/*
+    	float time;
+    	cudaEvent_t start;
+    	cudaEvent_t stop;
+    	cudaEventCreate(&start);
+    	cudaEventCreate(&stop);
+	cudaEventRecord(start, 0);
+
+float 	total = 0.0;
+float 	stage1 = 0.0;
+float	bitonic = 0.0;
+float	singleradix = 0.0;
+float	multiblockradix = 0.0;
+float	radix = 0.0;
+float	sortsegment = 0.0;
+
+   	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	printf("scatter and get_first_key time is %f\n", time);
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+*/
+
+__global__ void compose_keys_kernel(uint32 *d_sa, uint64 *d_tmp, uint32 *d_1stkey, uint32 *d_2ndkey, uint32 size, uint32 h_order);
+
+/**
+ * wrapper function of b40c radix sort utility
+ *
+ * sort entries according to d_keys
+ *
+ */
+template<typename T>
+void gpu_sort(T *d_keys, uint32 *d_values, uint32 size)
+{
+
+	//b40c::radix_sort::Enactor enactor;
+	//b40c::util::DoubleBuffer<uint32, uint32> sort_storage(d_keys, d_values);
+	//enactor.Sort(sort_storage, size);
+
+
+	thrust::device_ptr<T> d_key_ptr = thrust::device_pointer_cast(d_keys);
+	thrust::device_ptr<uint32> d_value_ptr = thrust::device_pointer_cast(d_values);
+	thrust::sort_by_key(d_key_ptr, d_key_ptr+size, d_value_ptr);
+	return;
+
+	//MergesortPairs<T, uint32>(d_keys, d_values, size, *context);
+}
+
+
+//========================================================================================
+__global__ void transform_init(uint32 *d_mark, uint32 *d_rank, uint32 string_size)
+{
+	uint32 tid = (TID << 2);
+
+	if (tid >= string_size)
+		return;
+
+	uint4 mark4 = *(uint4*)(d_mark+tid);
+	uint4* d_rank_ptr = (uint4*)(d_rank+tid);
+
+	uint4 rank;
+
+	rank.x = tid & (0-mark4.x);
+	rank.y = (tid + 1) & (0-mark4.y);
+
+	//if(tid + 2 < string_size)
+		rank.z = (tid + 2) & (0-mark4.z);
+
+	//if(tid + 3 < string_size)
+		rank.w = (tid + 3) & (0-mark4.w);
+
+	*d_rank_ptr = rank;
+
+}
+
+__global__ void transform_init1(uint32 *d_rank, uint32 *d_mark, uint32 *d_index, uint32 index_size)
+{
+	uint32 tid = TID;
+
+	if (tid >= index_size)
+		return;
+
+	d_rank[tid] = d_index[tid]*d_mark[tid];
+}
+
+int transform(uint32 *d_mark, uint32 *d_temp, uint32 string_size)
+{
+	/*
+    	float time;
+    	cudaEvent_t start;
+    	cudaEvent_t stop;
+    	cudaEventCreate(&start);
+    	cudaEventCreate(&stop);
+	cudaEventRecord(start, 0);
+	*/
+
+	int numunique;
+
+	//thrust approach
+	
+	thrust::device_ptr<uint32> dev_seq = thrust::device_pointer_cast(d_temp);
+	thrust::sequence(thrust::device, dev_seq, dev_seq + string_size);
+
+	thrust::device_ptr<uint32> dev_mark = thrust::device_pointer_cast(d_mark);
+
+	thrust::multiplies<int> op;
+	thrust::transform(thrust::device, dev_mark, dev_mark + string_size, dev_seq, dev_seq, op);
+	numunique = thrust::count(thrust::device, dev_mark, dev_mark+string_size, 1);
+
+	//transform the mark from format:
+	//1 0 0 0 1 0 0 0 1 0 0 0 ..... to
+	//0 0 0 0 1 1 1 1 2 2 2 2......
+	thrust::inclusive_scan(thrust::device, dev_mark, dev_mark + string_size, dev_mark);
+	thrust::inclusive_scan_by_key(thrust::device, dev_mark, dev_mark + string_size, dev_seq, dev_seq);
+	
+
+	//cudpp approach
+	/*
+	dim3 h_dimBlock(BLOCK_SIZE,1,1);
+	dim3 h_dimGrid(1,1,1);
+	int numBlocks = CEIL(CEIL(string_size, 4), h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	transform_init<<<h_dimGrid, h_dimBlock>>>(d_mark, d_temp, string_size);
+
+	CUDPPConfiguration config;
+	config.op = CUDPP_ADD;
+	config.datatype = CUDPP_UINT;
+	config.algorithm = CUDPP_SEGMENTED_SCAN;
+	config.options = CUDPP_OPTION_FORWARD | CUDPP_OPTION_INCLUSIVE;
+
+	CUDPPHandle scanplan = 0;
+	CUDPPResult res = cudppPlan(theCudpp, &scanplan, config, string_size, 1, 0);
+	if (CUDPP_SUCCESS != res)
+	{
+		printf("Error creating CUDPPPlan\n");
+		exit(-1);
+	}
+
+
+	res = cudppSegmentedScan(scanplan, d_temp, d_temp, d_mark, string_size);
+	if (CUDPP_SUCCESS != res)
+	{
+		printf("Error in cudppScan()\n");
+		exit(-1);
+	}
+
+	res = cudppDestroyPlan(scanplan);
+	if (CUDPP_SUCCESS != res)
+	{
+
+		printf("Error destroying CUDPPPlan\n");
+		exit(-1);
+	}
+
+	thrust::device_ptr<uint32> dev_mark = thrust::device_pointer_cast(d_mark);
+	numunique = thrust::count(thrust::device, dev_mark, dev_mark+string_size, 1);
+	*/	
+
+	/*
+   	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	printf("transform time is %f\n", time);
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+	*/
+
+	return numunique;
+
+}
+
+	//num_unique = transform1(d_isa_tmp, d_c_index, d_isa_out, index_size);
+
+int transform1(uint32 *d_mark, uint32 *d_c_index, uint32 *d_rank, uint32 *d_temp, uint32 index_size)
+{
+
+    	float time;
+    	cudaEvent_t start;
+    	cudaEvent_t stop;
+    	cudaEventCreate(&start);
+    	cudaEventCreate(&stop);
+	cudaEventRecord(start, 0);
+
+
+	int numunique;
+
+	//thrust approach
+	
+	dim3 h_dimBlock(BLOCK_SIZE,1,1);
+	dim3 h_dimGrid(1,1,1);
+	int numBlocks = CEIL(index_size, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+	transform_init1<<<h_dimGrid, h_dimBlock>>>(d_rank, d_mark, d_c_index, index_size);
+
+	thrust::device_ptr<uint32> dev_mark = thrust::device_pointer_cast(d_mark);
+	numunique = thrust::count(dev_mark, dev_mark+index_size, 1);
+
+	thrust::device_ptr<uint32> dev_rank = thrust::device_pointer_cast(d_rank);
+	thrust::device_ptr<uint32> dev_temp = thrust::device_pointer_cast(d_temp);
+
+	//transform the mark from format:
+	//1 0 0 0 1 0 0 0 1 0 0 0 ..... to
+	//0 0 0 0 1 1 1 1 2 2 2 2......
+	thrust::inclusive_scan(dev_mark, dev_mark + index_size, dev_temp);
+	thrust::inclusive_scan_by_key(dev_temp, dev_temp + index_size, dev_rank, dev_rank);
+	
+
+	//cudpp approach
+	/*
+	dim3 h_dimBlock(BLOCK_SIZE,1,1);
+	dim3 h_dimGrid(1,1,1);
+	int numBlocks = CEIL(index_size, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+	transform_init1<<<h_dimGrid, h_dimBlock>>>(d_rank, d_mark, d_c_index, index_size);
+
+	CUDPPConfiguration config;
+	config.op = CUDPP_ADD;
+	config.datatype = CUDPP_UINT;
+	config.algorithm = CUDPP_SEGMENTED_SCAN;
+	config.options = CUDPP_OPTION_FORWARD | CUDPP_OPTION_INCLUSIVE;
+
+	CUDPPHandle scanplan = 0;
+	CUDPPResult res = cudppPlan(theCudpp, &scanplan, config, index_size, 1, 0);
+	if (CUDPP_SUCCESS != res)
+	{
+		printf("Error creating CUDPPPlan\n");
+		exit(-1);
+	}
+
+
+	res = cudppSegmentedScan(scanplan, d_rank, d_rank, d_mark, index_size);
+	if (CUDPP_SUCCESS != res)
+	{
+		printf("Error in cudppScan()\n");
+		exit(-1);
+	}
+
+	res = cudppDestroyPlan(scanplan);
+	if (CUDPP_SUCCESS != res)
+	{
+
+		printf("Error destroying CUDPPPlan\n");
+		exit(-1);
+	}
+
+	thrust::device_ptr<uint32> dev_mark = thrust::device_pointer_cast(d_mark);
+	numunique = thrust::count(thrust::device, dev_mark, dev_mark+index_size, 1);
+	*/
+
+   	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	printf("transform1 time is %f\n", time);
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+
+	return numunique;
+
+}
+
+
+__global__ void get_gt1_pos(uint32 *d_segstart_mark, uint32 *d_index, uint32 *d_seg_start, uint32 gt1_size)
+{
+	uint32 tid = TID;
+	if(tid >= gt1_size)
+		return;
+
+	if(d_segstart_mark[tid]==1)
+	{
+		d_seg_start[tid] = d_index[tid];
+	}
+	else
+		d_seg_start[tid] = 0;
+
+
+}
+
+__global__ void get_segend_mark(uint32 *d_segstart_mark, uint32 *d_segend_mark, uint32 gt1_size)
+{
+	uint32 tid = TID;
+	if(tid >= gt1_size)
+		return;
+
+	if(d_segstart_mark[tid]==1 && tid)
+		d_segend_mark[tid-1] = 1;
+	else if(tid = gt1_size-1)
+		d_segend_mark[tid] = 1;
+}
+
+__global__ void get_seg_len(uint32 *d_segstart, uint32 *d_seglen, uint32 numseg)
+{
+	uint32 tid = TID;
+	if(tid >= numseg)
+		return;
+
+	d_seglen[tid] = d_seglen[tid] - d_segstart[tid]+1;
+}
+
+bool update_isa_stage1(	uint32 		*d_sa,
+			uint64 		*d_key64,
+			uint32 		*d_isa_in,
+			uint32 		*d_isa_out,
+			uint32		*d_globalIdx,
+			uint32		*d_isa_tmp,
+			float 		stage_one_ratio,
+			uint32 		string_size,
+			bool 		&sorted,
+			uint32 		&num_unique,
+			uint32		&num_seg,
+			uint32		&index_size)
+{
+
+	dim3 h_dimBlock(BLOCK_SIZE,1,1);
+	dim3 h_dimGrid(1,1,1);
+	int numBlocks = CEIL(CEIL(string_size, 4), h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	uint32 last_rank[] = {0xffffffff, 0, 0xffffffff};
+
+	mem_host2device(last_rank, d_isa_out+string_size, sizeof(uint32)*3);
+
+	//mark the start position of each segment to 1
+	neighbour_comparison_kernel1<<<h_dimGrid, h_dimBlock>>>(d_isa_out, d_key64, string_size);
+	neighbour_comparison_kernel2<<<h_dimGrid, h_dimBlock>>>(d_isa_out, d_key64, string_size);
+
+    	float time;
+    	cudaEvent_t start;
+    	cudaEvent_t stop;
+    	cudaEventCreate(&start);
+    	cudaEventCreate(&stop);
+	cudaEventRecord(start, 0);
+
+	//compact global index to get compacted segment index
+	//if mark[i]=1 && mark[i+1]==1, then pos i is a singlelone segment
+
+	uint32 *d_gt1mark = (uint32*)d_key64;
+	//uint32 *d_globalIdx = (uint32*)allocate_device_memory(sizeof(uint32)*string_size);
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(string_size, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	mark_gt1_segment<<<h_dimGrid, h_dimBlock>>>(d_isa_out, d_gt1mark, d_globalIdx, string_size);
+
+	//d_gt1mark can be re-used here
+
+	thrust_uint_p dev_index = thrust::device_pointer_cast(d_globalIdx);
+	thrust_uint_p dev_stencil = thrust::device_pointer_cast(d_gt1mark);
+
+	//compact global index  get indices for gt1 segment
+	thrust_uint_p new_end = thrust::remove_if(dev_index, dev_index + string_size, dev_stencil, thrust::identity<uint>());
+
+	index_size = new_end - dev_index;
+
+	printf("index_size is %d\n", index_size);
+
+	uint32 *d_seg_start = d_gt1mark;
+
+	//compact seg start mark (d_isa_out) get start_mark for gt1 segment
+	thrust_uint_p dev_mark = thrust::device_pointer_cast(d_isa_out);
+	thrust_uint_p dev_c_mark = thrust::device_pointer_cast(d_isa_tmp);
+	thrust::remove_copy_if(dev_mark, dev_mark + string_size, dev_stencil, dev_c_mark, thrust::identity<uint>());
+
+
+	//d_c_startpos -> d_c_endpos -> d_c_seg_start
+	//d_c_startpos and d_c_endpos -> d_c_seg_len
+
+	//segmented scan
+	//use d_c_mark and d_c_index to get d_c_pos
+
+	//the start mark is stored in d_isa_in
+	//the start pos is stored in d_seg_start
+	thrust_uint_p dev_c_segstart = thrust::device_pointer_cast(d_seg_start);
+	thrust_uint_p end = thrust::copy_if(dev_index, dev_index + index_size, dev_c_mark, dev_c_segstart, thrust::identity<uint>());
+
+	num_seg = end-dev_c_segstart;
+	printf("num >2 seg is %d\n", num_seg);
+
+	//numseg = thrust::count(thrust::device, dev_mark, dev_mark+gt1_size, 1);
+
+	uint32 *d_seg_len = d_seg_start + string_size;
+	cudaMemset(d_isa_in, 0, index_size*sizeof(uint32));
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(index_size, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+	get_segend_mark<<<h_dimGrid, h_dimBlock>>>(d_isa_tmp, d_isa_in, index_size);
+
+	//cudaMemcpy(d_isa_in, d_seg_len, index_size*sizeof(uint32), cudaMemcpyDeviceToDevice);
+	thrust_uint_p dev_end_mark = thrust::device_pointer_cast(d_isa_in);
+
+	thrust_uint_p dev_c_seglen = thrust::device_pointer_cast(d_seg_len);
+
+	end = thrust::copy_if(dev_index, dev_index + index_size, dev_end_mark, dev_c_seglen, thrust::identity<uint>());
+
+	if(num_seg != end-dev_c_seglen)
+		printf("error in thrust::copy_if, %d\n",  end-dev_c_seglen);
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(num_seg, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	get_seg_len<<<h_dimGrid, h_dimBlock>>>(d_seg_start, d_seg_len, num_seg);
+
+   	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	printf("compute segment for next round time is %f\n", time);
+
+
+	cudaEventRecord(start, 0);
+
+	//in: d_isa_out
+	//out: d_isa_in
+	num_unique = transform(d_isa_out, d_isa_in, string_size);
+	printf("number of unique ranks: %u\n", num_unique);
+
+   	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	printf("transform time is %f\n", time);
+
+
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+
+	//in: d_isa_in
+	//out:d_isa_out 106ms for sprot32
+	scatter(d_sa, d_isa_in, d_isa_out, string_size);
+
+	/*
+	cudaMemcpy(d_globalIdx, d_seg_len, numseg*sizeof(uint), cudaMemcpyDeviceToDevice);
+
+	cudaFree(d_seg_len);
+	*/
+
+	//scan to get d_c_rank for each segments
+
+
+	//using d_c_index and d_c_rank to update d_isa
+
+
+	//printf("num of 1-segment is %d\n", string_size- (new_end-dev_index));
+
+
+	if (num_unique >= string_size*stage_one_ratio)
+	{
+		if (num_unique >= string_size)
+			sorted = true;
+		return true;
+	}
+
+	//isa[string_size] should always be 0
+	//mem_host2device(&last_rank, d_isa_out+string_size, sizeof(uint32));
+
+	return false;
+}
+
+
+__global__ void scatter(uint32 *d_sa, uint32 *d_rank, uint32 *d_index, uint32 *d_isa, uint32 index_size)
+{
+	uint32 tid = TID;
+	if(tid >= index_size)
+		return;
+
+	int index = d_index[tid];
+	int sa = d_sa[index];
+
+	d_isa[sa] = d_rank[tid];
+}
+
+//TODO: d_isa_tmp may be remove finally (only reuse >1 segment pos here)
+//TODO: move bucket processing at each iteration to the this function (reuse)
+bool update_isa_stage2(
+			uint32 		*d_sa,
+			uint32 		*d_isa_in,
+			uint32 		*d_isa_out,
+			uint32		*d_isa_tmp,
+			uint32		*d_block_start,
+			uint32		*d_block_len,
+			uint32		*d_c_index,
+			int		*bound,
+			uint32 		string_size,
+			uint32 		&num_unique,
+			uint32		&num_seg,
+			uint32		&index_size)
+{
+
+
+    	float time;
+    	cudaEvent_t start;
+    	cudaEvent_t stop;
+    	cudaEventCreate(&start);
+    	cudaEventCreate(&stop);
+
+	//assume we have a compacted index here (init. is global index, or computed for > 1 segments)
+	//get seg_index
+	//mark accord. to compacted index, get compacted mark, also use d_blk_start
+	//segmented scan mark to get rank
+	//scatter using compacted index and seg_rank
+	//for each rank value, record the pos of the segment end for it, using d_blk_len.
+	//compacted rank to get segment_start for next iteration
+	//compute new segment_len for next iteration
+	//sort new segment_len and segment start.
+	//... the following steps are the same.
+
+	cudaEventRecord(start, 0);
+
+	dim3 h_dimBlock(BLOCK_SIZE,1,1);
+	dim3 h_dimGrid(1,1,1);
+	int numBlocks = CEIL(index_size, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	neighbour_compare<<<h_dimGrid, h_dimBlock>>>(d_c_index, d_isa_out, d_isa_tmp, index_size);
+
+   	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	isa_mark += time;
+
+
+	cudaEventRecord(start, 0);
+
+	num_unique = transform1(d_isa_tmp, d_c_index, d_isa_out, d_block_len, index_size);
+
+   	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	isa_sum += time;
+
+
+	cudaEventRecord(start, 0);
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(index_size, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+	scatter<<<h_dimGrid, h_dimBlock>>>(d_sa, d_isa_out, d_c_index, d_isa_in, index_size);
+
+   	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	isa_scatter += time;
+
+	if (num_unique >= index_size)
+		return true;
+
+	//scatter using d_c_index, d_isa_out and d_isa_in
+
+	//d_isa_tmp can't be changed here
+	//d_isa_out stores the start position for new segment
+
+	/////////////////////////////////////////
+
+	uint32 *d_gt1mark = d_block_start;
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(index_size, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	mark_gt1_segment2<<<h_dimGrid, h_dimBlock>>>(d_isa_tmp, d_gt1mark, index_size);
+
+	thrust_uint_p dev_stencil = thrust::device_pointer_cast(d_gt1mark);
+	thrust_uint_p dev_index = thrust::device_pointer_cast(d_c_index);
+	thrust_uint_p dev_mark = thrust::device_pointer_cast(d_isa_tmp);
+
+	//compact global index  get indices for gt1 segment
+	thrust_uint_p new_end = thrust::remove_if(dev_index, dev_index + index_size, dev_stencil, thrust::identity<uint>());
+	//compact seg start mark (d_isa_tmp) get start_mark for gt1 segment
+	thrust::remove_if(dev_mark, dev_mark + index_size, dev_stencil, thrust::identity<uint>());
+
+	index_size = new_end - dev_index;
+
+
+	thrust_uint_p dev_start = thrust::device_pointer_cast(d_block_start);
+	thrust_uint_p end = thrust::copy_if(dev_index, dev_index + index_size, dev_mark, dev_start, thrust::identity<uint>());
+	num_seg = end - dev_start;
+
+	cudaMemset(d_isa_out, 0, index_size*sizeof(uint32));
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(index_size, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+	get_segend_mark<<<h_dimGrid, h_dimBlock>>>(d_isa_tmp, d_isa_out, index_size);
+
+
+	thrust_uint_p dev_end = thrust::device_pointer_cast(d_block_len);
+	thrust_uint_p dev_segend_mark = thrust::device_pointer_cast(d_isa_out);
+
+	end = thrust::copy_if(dev_index, dev_index + index_size, dev_segend_mark, dev_end, thrust::identity<uint>());
+
+	if(num_seg != end - dev_end)
+		printf("error %d\n", __LINE__);
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	numBlocks = CEIL(num_seg, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	get_seg_len<<<h_dimGrid, h_dimBlock>>>(d_block_start, d_block_len, num_seg);
+
+
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+	return false;
+
+}
+
+bool prefix_doubling_sort(
+			uint64 	*d_key64,
+			uint32 	*d_sa,
+			uint32 	*d_isa_in,
+			uint32 	*d_isa_out,
+			uint32	*d_ref,
+			uint32  *d_index,
+			uint32  *d_isa_tmp, 
+			uint32 	h_order,
+			uint32	init_order,
+			uint32 	string_size,
+			float 	stage_one_ratio,
+			bool 	&sorted,
+			uint32  &num_unique,
+			uint32  &num_seg,
+			uint32  &index_size)
+{
+
+	//generate bucket
+	if(h_order == init_order)
+	{
+		uint32 size_d_ref = CEIL(string_size, 4);
+
+		dim3 h_dimBlock(BLOCK_SIZE,1,1);
+		dim3 h_dimGrid(1,1,1);
+		int numBlocks = CEIL((size_d_ref+2), h_dimBlock.x);
+		THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+		if(init_order == 8)
+			generate_bucket_with_shift<<<h_dimGrid, h_dimBlock>>>(d_sa, d_ref, d_key64, (size_d_ref+2));
+		else
+			cout << "init_order error, currently not supported" << endl;
+	}
+	else
+	{
+		dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
+		dim3 blocks_per_grid(1, 1, 1);
+
+		blocks_per_grid.x = CEIL(CEIL(string_size, 4), threads_per_block.x);
+
+		compose_keys_kernel<<<blocks_per_grid, threads_per_block>>>(d_sa, d_key64, d_isa_out, d_isa_in+h_order/2, string_size, h_order/2);
+	}
+
+
+	//494ms for sprot34
+	if(1)
+	{
+		gpu_sort<uint64>(d_key64, d_sa, string_size);
+		//b40c::radix_sort::Enactor enactor;
+		//b40c::util::DoubleBuffer<uint32, uint32> sort_storage(d_keys, d_values);
+		//enactor.Sort(sort_storage, size);
+	}
+	else
+	{
+		thrust::device_ptr<uint64> d_key_ptr = thrust::device_pointer_cast(d_key64);
+		thrust::device_ptr<uint32> d_value_ptr = thrust::device_pointer_cast(d_sa);
+		thrust::sort_by_key(d_key_ptr, d_key_ptr+string_size, d_value_ptr);
+	}
+
+	//update isa
+	//bool flag =  update_isa_stage1(d_sa, d_key64, d_isa_in, d_isa_out, stage_one_ratio, string_size, sorted, num_unique);
+
+	bool flag = update_isa_stage1(d_sa, d_key64, d_isa_in, d_isa_out, d_index, d_isa_tmp, stage_one_ratio, string_size, sorted, num_unique, num_seg, index_size);
+
+	return flag;
+
+}
+
+
+void sufsort_stage1(
+		uint64 		*d_key64,
+		uint32 		*d_sa,
+		uint32 		*&d_isa_in,
+		uint32 		*&d_isa_out,
+		uint32 		*h_ref,
+		uint32 		*d_ref,
+		uint32		&h_order,
+		uint32		init_order,
+		float 		stage_one_ratio,
+		uint32 		string_size,
+		bool 		&sorted,
+		uint32		&num_unique)
+{
+
+	/*
+	for (h_order = init_order; h_order < string_size; h_order *= 2)
+	{
+		if(prefix_doubling_sort(d_key64, d_sa, d_isa_in, d_isa_out, d_ref, h_order, init_order, string_size, stage_one_ratio, sorted, num_unique))
+		{
+			::swap(d_isa_in, d_isa_out);
+
+			//h_order *= 2;
+			break;
+		}
+
+		::swap(d_isa_in, d_isa_out);
+	}*/
+
+}
+
+__device__ __forceinline__ uint32 getbucket2(uint32 key)
+{
+	uint32 bk = (uint32)__log2f((uint32)key-1)+!((uint32)key==1);
+
+	if(bk > 12 && bk <= 16)
+		bk = 12;
+	else if (bk > 16 && bk <= 32)
+		bk = 13;
+	else if (bk == 33)
+		bk = 15;
+
+	return bk;
+
+	//return key;
+}
+
+__global__ void pre_process(uint32 *d_block_len, uint32 num_unique)
+{
+	uint32 tid = TID;
+
+	if(tid >= num_unique)
+		return;
+
+	uint32 len = d_block_len[tid];
+	uint32 bucket = getbucket2(len);
+
+	d_block_len[tid] = ((len << 4) | (bucket & 0x0f));
+
+}
+
+__global__ void post_process(uint32 *d_block_len,  uint32 num_unique)
+{
+	uint32 tid = TID;
+
+	if(tid >= num_unique)
+		return;
+
+	uint32 len = d_block_len[tid];
+	d_block_len[tid] = (len >> 4);
+}
+
+
+//d_key64 stores segment start and segment len
+//
+bool stage_two_sort(
+		uint64		*d_key64,
+		uint32		*d_sa,
+		uint32 		*d_isa_in,
+		uint32 		*d_isa_out,
+		uint32		*d_isa_tmp,
+		uint32		*d_index,
+		uint32		h_order,
+		uint32		string_size,
+		uint32		&num_unique,
+		uint32		&num_seg,
+		uint32		&index_size,
+		uint32		digit_count,
+		uint32		*d_digits,
+		uint32		*d_tmp_store,
+		int		*bound)
+{
+
+	//generate keys
+	//sort
+	//update_isa
+
+    	float time;
+    	cudaEvent_t start;
+    	cudaEvent_t stop;
+    	cudaEventCreate(&start);
+    	cudaEventCreate(&stop);
+
+	uint32* d_block_start 	= (uint32*)d_key64;
+	uint32* d_block_len 	= d_block_start + string_size;
+
+	////////////////////////////sort segment position according to segment length (replace with bucket?)
+	time = 0;
+
+	dim3 h_dimBlock(BLOCK_SIZE,1,1);
+	dim3 h_dimGrid(1,1,1);
+	int numBlocks = CEIL(num_unique, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	printf("num_seg is %d\n", num_seg);
+
+	cudaEventRecord(start, 0);
+
+	//pre_process<<<h_dimGrid, h_dimBlock>>>(d_block_len, num_unique);
+
+	//gpu_sort<uint32>(d_block_len, d_block_start, num_unique);
+	thrust::device_ptr<uint32> d_key_ptr = thrust::device_pointer_cast(d_block_len);
+	thrust::device_ptr<uint32> d_value_ptr = thrust::device_pointer_cast(d_block_start);
+	thrust::sort_by_key(d_key_ptr, d_key_ptr+num_seg, d_value_ptr);
+
+	//post_process<<<h_dimGrid, h_dimBlock>>>(d_block_len, num_unique);
+
+	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	bucketsort += time;
+	printf("bucket sort time is %f\n", time);
+
+	////////////////////////////sort using diff strategies.
+
+	h_dimGrid.x = h_dimGrid.y = 1;
+	//numBlocks = CEIL(num_unique, (h_dimBlock1.x*NUM_ELEMENT_ST));
+	numBlocks = CEIL(num_seg, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	time = 0;
+	cudaEventRecord(start, 0);
+
+	int *d_bound;
+	cudaMalloc((void**)&d_bound, 16*sizeof(int));
+	cudaMemset(d_bound, -1, 16*sizeof(int));
+
+	find_boundary_kernel_init<<<h_dimGrid, h_dimBlock>>>(d_block_len, d_bound, num_seg);
+
+	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	findbdry += time;
+
+	///////////////////////////
+
+	int gt_one_bound, gt_two_bound, bsort_boundary, s_type_bound, l_type_bound;
+
+	mem_device2host(d_bound, bound, sizeof(int)*16);
+	cudaFree(d_bound);
+
+	gt_one_bound = bound[0];	//>1
+	gt_two_bound = bound[1];	//>2
+	bsort_boundary = bound[8]; 	//>256
+	s_type_bound = bound[11];	//>2048
+	l_type_bound = bound[12];	//>65535
+
+	//if(h_order==16)
+	bound[0] = 0;
+
+	//printf("num_unique is %d\n", num_unique);
+	printf("boundaries is %d, %d, %d, %d, %d, %d\n", gt_one_bound, gt_two_bound, bsort_boundary, s_type_bound, l_type_bound, h_order);
+
+	//////////////////////////////////////// (this part need improved)
+	//compact index from last round to get new compacted index
+
+	time = 0.0;
+	cudaEventRecord(start, 0);
+
+	if(bound[11] == -1)
+		bound[11] = bound[12];
+	if(bound[11] != -1 && num_seg-bound[11]>0)
+	{
+		h_dimGrid.x = h_dimGrid.y = 1;
+		numBlocks = num_seg - bound[11];
+		THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+		//52 ms for only large(>256) segments, 128 ms for all segments
+		get_second_keys_stage_two<<<h_dimGrid, h_dimBlock>>>(d_sa, d_isa_in+h_order/2, d_isa_out, d_block_start+bound[11], d_block_len+bound[11], numBlocks);
+	}
+
+
+	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	get2ndkey += time;
+	/////////////////////////////////////////
+
+	time = 0.0;
+	cudaEventRecord(start, 0);
+	//>65535
+	if(bound[12] != -1 && num_seg-bound[12] > 0)
+	{
+		uint32 *h_block_start = (uint32*)malloc((num_seg-bound[12])*sizeof(uint32));
+		uint32 *h_block_len = (uint32*)malloc((num_seg-bound[12])*sizeof(uint32));
+		cudaMemcpy(h_block_start, d_block_start+bound[12], (num_seg-bound[12])*sizeof(uint32), cudaMemcpyDeviceToHost);
+		cudaMemcpy(h_block_len,   d_block_len+bound[12],   (num_seg-bound[12])*sizeof(uint32), cudaMemcpyDeviceToHost);
+
+		for (uint32 i = 0; i < num_seg-bound[12]; i++)
+		{
+			//printf("%d\t%d\n", h_block_start[i], h_block_len[i]);
+
+			gpu_sort<uint32>(d_isa_out+h_block_start[i], d_sa+h_block_start[i], h_block_len[i]);
+		}
+
+		free(h_block_start);
+		free(h_block_len);
+	}
+	else
+	{
+		bound[12] = num_seg;
+	}
+
+	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	radix += time;
+
+
+	time = 0.0;
+	cudaEventRecord(start, 0);
+	if(bound[11] != -1 && bound[12] - bound[11] > 0)
+	{
+		//>2048  <65536
+		uint32 num_thread = NUM_THREAD_SEG_SORT;
+		uint32 block_count = bound[12] - bound[11];
+
+		uint32 *d_block_start_ptr = d_block_start +bound[11];
+		uint32 *d_block_len_ptr = d_block_len + bound[11];
+		//Partition *d_par_ptr = d_par + s_type_par_bound;
+		uint32 num_block = block_count < NUM_BLOCK_SEG_SORT ? block_count : NUM_BLOCK_SEG_SORT;
+		uint32 work_per_block = block_count/num_block + (block_count%num_block?1:0);
+		uint32 num_interval_for_pass2 = work_per_block/NUM_WARPS + (work_per_block%NUM_WARPS?1:0);
+
+		for (uint32 bit = 0; bit < 30; bit += 5)
+		{
+			HANDLE_ERROR(cudaMemset(d_digits, 0, digit_count));
+			multiblock_radixsort_pass1<<<num_block, num_thread>>>(d_isa_out, d_digits+32, d_block_start_ptr, d_block_len_ptr, bit, block_count);
+			multiblock_radixsort_pass2<<<num_block, num_thread>>>(d_digits+32, d_block_len_ptr, num_interval_for_pass2, block_count);
+			multiblock_radixsort_pass3<<<num_block, num_thread>>>(d_digits+32, d_isa_out, d_sa, d_block_start_ptr, d_block_len_ptr, d_tmp_store, bit, block_count);
+		}
+	}
+	else
+	{
+		bound[11] = bound[12];
+	}
+	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	multiblockradix += time;
+
+
+	time = 0.0;
+	cudaEventRecord(start, 0);
+	//sort segments 256 ~ 2048
+	if(bound[8] != -1 && bound[11] - bound[8] > 0)
+	{
+		//S-type segment key-value sort
+		h_dimGrid.x = h_dimGrid.y = 1;
+		numBlocks = bound[11] - bound[8];
+		THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+		//for (uint32 bit = 0; bit < 30; bit +=5)
+		//	single_block_radixsort1<<<h_dimGrid, h_dimBlock>>>(d_isa_out, d_sa, d_block_start+bound[8], d_block_len+bound[8], bit, bound[11] - bound[8]);
+
+		bitonic_sort_kernel_gt256_isa<<<h_dimGrid, h_dimBlock>>>(d_block_len+bound[8], d_block_start+bound[8], d_sa, d_isa_in, d_isa_out, bound[11] - bound[8], h_order>>1);
+	}
+	else
+	{
+		bound[8] = bound[11];
+	}
+
+	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	singleradix += time;
+	printf("single radix time is %f\n", time);
+
+	//sort segments <256
+
+	//253 ms for the two bitonic sort
+	//first compose key then sort
+	time = 0.0;
+	cudaEventRecord(start, 0);
+
+	/*
+	if(gt_two_bound != -1 && bsort_boundary-gt_two_bound > 0)
+	{
+		h_dimGrid1.x = h_dimGrid1.y = 1;
+		numBlocks = bsort_boundary-gt_two_bound;
+		THREAD_CONF(h_dimGrid1, h_dimBlock1, numBlocks, h_dimBlock1.x);
+
+		bitonic_sort_kernel_gt128<<<h_dimGrid1, h_dimBlock1>>>(d_block_len+gt_two_bound, d_block_start+gt_two_bound, d_sa, d_isa_out, bsort_boundary-gt_two_bound);
+	}
+	else
+		gt_two_bound = bsort_boundary;
+	*/
+
+
+
+	//TODO: separate > WARP_SIZE and < WARP_SIZE segment
+	for(int i=7; i>=1; i--)
+	{
+		//sort segment with length: 2^i-2^(i+1)
+		if(bound[i] != -1 && bound[i+1]-bound[i] > 0)
+		{
+			int segnum = 0x01<<(7-i);
+			//int seglen = 0x01<<(i+1);
+
+			h_dimGrid.x = h_dimGrid.y = 1;
+			numBlocks = CEIL((bound[i+1]-bound[i]), segnum);
+			THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+			/*
+			//total 335.42 ms for sprot34.dat
+			bitonic_sort_kernel_gt2n<<<h_dimGrid, h_dimBlock>>>(
+					d_block_len+bound[i],
+					d_block_start+bound[i],
+					d_sa,
+					d_isa_out,
+					bound[i+1]-bound[i],
+					segnum, seglen);
+			*/
+
+
+			//total 387.54 ms for sprot34.dat
+			bitonic_sort_kernel_gt2n_isa<<<h_dimGrid, h_dimBlock>>>(
+					d_block_len+bound[i],
+					d_block_start+bound[i],
+					d_sa,
+					d_isa_in,
+					d_isa_out,
+					bound[i+1]-bound[i],
+					i+1,
+					h_order>>1);
+
+			/*
+			bitonic_sort_kernel_gt2n_isa1<<<h_dimGrid, h_dimBlock>>>(
+					d_block_len+bound[i],
+					d_block_start+bound[i],
+					d_sa,
+					d_isa_in,
+					d_isa_out,
+					bound[i+1]-bound[i],
+					i+1,
+					h_order>>1);
+			*/
+
+		}
+		else
+			bound[i] = bound[i+1];
+	}
+
+
+	//first compose key then sort
+	//1-2
+	if(bound[0] != -1 && bound[1]-bound[0] > 0)
+	{
+		h_dimGrid.x = h_dimGrid.y = 1;
+		numBlocks = CEIL((bound[1]-bound[0]), h_dimBlock.x);
+		THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+		//bitonic_sort_kernel2<<<h_dimGrid, h_dimBlock>>>(d_block_start+bound[0], d_sa, d_isa_out, bound[1]-bound[0]);
+
+		bitonic_sort_kernel2_isa<<<h_dimGrid, h_dimBlock>>>(d_block_start+bound[0], d_sa, d_isa_in, d_isa_out, bound[1]-bound[0], h_order/2);
+	}
+	else
+		bound[0] = bound[1];
+
+	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	bitonic += time;
+
+
+	//if(h_order == 16)
+	//	check_small_group_sort(d_sa, d_isa_in, d_block_len, d_block_start, num_seg, string_size, h_order/2);
+
+
+	cudaEventRecord(start, 0);
+
+	//update isa (num_unique is updated here)
+	//bool flag = update_isa_stage2(d_sa, d_isa_in, d_isa_out, d_isa_tmp, d_block_start, d_block_len, bound, string_size, num_unique, h_order);
+
+	bool flag = update_isa_stage2(d_sa, d_isa_in, d_isa_out, d_isa_tmp, d_block_start, d_block_len, d_index, bound, string_size, num_unique, num_seg, index_size);
+
+	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	isa += time;
+
+
+
+
+	uint32 *d_testkey, *d_testval;
+	//uint32 *h_testkey = new uint32[index_size];
+	//uint32 *h_testval = new uint32[index_size];
+
+	d_testkey = d_isa_out;
+	cudaMalloc((void**)&d_testval, index_size*sizeof(uint32));
+
+	cudaEventRecord(start, 0);
+	gpu_sort<uint32>(d_testkey, d_testval, index_size);
+	cudaEventRecord(stop, 0);
+    	cudaEventSynchronize(stop);
+    	cudaEventElapsedTime(&time, start, stop);
+	sorttest += time;
+
+	cudaFree(d_testval);
+
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+	return flag;
+}
+
+
+void sufsort_stage2(uint64	*d_key64,
+		uint32		*d_sa,
+		uint32		*d_isa_in,
+		uint32		*d_isa_out,
+		uint32		*d_index,
+		uint32		*d_isa_tmp,
+		uint32		*h_ref,
+		uint32		h_order,
+		uint32		string_size,
+		uint32		&num_unique,
+		uint32		&num_seg,
+		uint32		&index_size)
+{
+
+	//allocate memory for segmented sort
+	uint32 digit_count = sizeof(uint32)*16*NUM_LIMIT*32;
+	uint32 *d_digits = (uint32*)allocate_device_memory(digit_count);
+	uint32 *d_tmp_store = (uint32*)allocate_device_memory(sizeof(uint32) * NUM_BLOCK_SEG_SORT * MAX_SEG_NUM *2);
+
+	//uint old_unique = 0;
+	int bound[16];
+
+	for (; h_order < string_size; h_order *= 2)
+	{
+		bool flag = stage_two_sort(d_key64, d_sa, d_isa_in, d_isa_out, d_isa_tmp, d_index, h_order, string_size, num_unique, num_seg, index_size, digit_count, d_digits, d_tmp_store, bound);
+
+		if(flag)
+		{
+			//::swap(d_isa_in, d_isa_out);
+			//h_order *= 2;
+			break;
+		}
+		//if(h_order==16)
+		//check_h_order_correctness(d_sa, (uint8*)h_ref, string_size, h_order);
+		//::swap(d_isa_in, d_isa_out);
+	}
+
+	free_device_memory(d_digits);
+	free_device_memory(d_tmp_store);
+	//free_device_memory(d_isa_tmp);
+}
+
+
+
+void small_sufsort_entry(uint32 *h_sa, uint32 *h_ref, uint32 init_order, uint32 string_size, float stage_one_ratio)
+{
+	/*
+	int numElements = (int)stage_one_ratio;
+
+	uint32 *h_keys = new uint32[numElements];
+	uint32 *h_vals = new uint32[numElements];
+
+	srand((int)clock());
+	for(int i=0; i<numElements; i++)
+	{
+		h_keys[i] = rand()%65535+1;
+	}
+
+
+	uint32 *d_keys, *d_vals;
+
+	dim3 h_dimBlock(BLOCK_SIZE,1,1);
+	dim3 h_dimGrid(1,1,1);
+	int numBlocks = CEIL(numElements, h_dimBlock.x);
+	THREAD_CONF(h_dimGrid, h_dimBlock, numBlocks, h_dimBlock.x);
+
+	cudaMalloc((void**)&d_keys, numElements*sizeof(uint32));
+	cudaMalloc((void**)&d_vals, numElements*sizeof(uint32));
+	cudaMemcpy(d_keys, h_keys, numElements*sizeof(uint32), cudaMemcpyHostToDevice);
+
+	bucketTest<<<h_dimGrid, h_dimBlock>>>(d_keys, d_vals, numElements);
+
+	pre_process<<<h_dimGrid, h_dimBlock>>>(d_keys, numElements);
+	thrust::device_ptr<uint32> d_key_ptr = thrust::device_pointer_cast(d_keys);
+	thrust::device_ptr<uint32> d_value_ptr = thrust::device_pointer_cast(d_vals);
+	thrust::sort_by_key(d_key_ptr, d_key_ptr+numElements, d_value_ptr);
+	post_process<<<h_dimGrid, h_dimBlock>>>(d_keys, numElements);
+
+	cudaMemcpy(h_keys, d_keys, numElements*sizeof(uint32), cudaMemcpyDeviceToHost);
+	cudaMemcpy(h_vals, d_vals, numElements*sizeof(uint32), cudaMemcpyDeviceToHost);
+
+	for(int i=0; i<numElements; i++)
+		printf("%d: %d, %d\n", i, h_keys[i], h_vals[i]);
+
+
+	delete [] h_keys;
+	delete [] h_vals;
+
+	cudaFree(d_keys);
+	cudaFree(d_vals);
+	return; */
+
+	/////////////////////
+
+	//context = mgpu::CreateCudaDevice(0);
+   	//cudppCreate(&theCudpp);
+
+	size_t* freed;
+	size_t* total;
+	freed = (size_t*)malloc(sizeof(size_t));
+	total = (size_t*)malloc(sizeof(size_t));
+	cudaMemGetInfo(freed, total);
+	printf("/////////free memory is %zd, and total is %zd\n", (*freed), (*total));
+	free(freed);
+	free(total);
+
+
+	uint32 ch_per_uint32 = 4;
+	uint32 size_d_ref = CEIL(string_size, ch_per_uint32);
+	uint32 ext_strsize = (size_d_ref+2)*ch_per_uint32;
+	uint32 num_unique = 0;
+	bool sorted = false;
+	uint32 h_order = init_order;
+
+	printf("string size and ceiled is %d, %d\n", string_size, ext_strsize);
+
+	/*set boundary of h_ref to default values*/
+	h_ref = (uint32*)realloc(h_ref, ext_strsize);
+
+	uint8 *h_ref_8 = (uint8*)h_ref;
+	for (uint32 i = string_size; i < ext_strsize; i++)
+		h_ref_8[i] = 0;
+
+	uint32* d_sa = (uint32*)allocate_device_memory(sizeof(uint32)*ext_strsize);
+	uint32* d_isa_in = (uint32*)allocate_device_memory(sizeof(uint32) * ext_strsize);
+	uint32* d_isa_out = (uint32*)allocate_device_memory(sizeof(uint32) * ext_strsize);
+	uint64* d_tmp = (uint64*)allocate_device_memory(sizeof(uint64) * ext_strsize);
+
+	//input is stored in d_isa_in
+	mem_host2device(h_ref, d_isa_in, ext_strsize);
+
+	Setup(3);
+	Start(3);
+
+    	float time;
+    	cudaEvent_t start;
+    	cudaEvent_t stop;
+    	cudaEventCreate(&start);
+    	cudaEventCreate(&stop);
+	cudaEventRecord(start, 0);
+
+	//sufsort_stage1(d_tmp, d_sa, d_isa_in, d_isa_out, h_ref, d_isa_in, h_order, h_order, stage_one_ratio, string_size, sorted, num_unique);
+
+	uint32* d_index = (uint32*)allocate_device_memory(sizeof(uint32) * ext_strsize);
+	uint32 *d_isa_tmp = (uint32*)allocate_device_memory(sizeof(uint32)*(string_size+20));
+
+	uint32 num_seg, index_size;
+
+	prefix_doubling_sort(d_tmp, d_sa, d_isa_in, d_isa_out, d_isa_in, d_index, d_isa_tmp, h_order, h_order, string_size, stage_one_ratio, sorted, num_unique, num_seg, index_size);
+	::swap(d_isa_in, d_isa_out);
+
+	//check_h_order_correctness(d_sa, (uint8*)h_ref, string_size, h_order);
+
+   	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time, start, stop);
+	stage1 += time;
+	printf("stage1 time is %f\n", stage1);
+
+	cudaEventRecord(start, 0);
+	if(!sorted)
+	{
+		h_order *= 2;
+		sufsort_stage2(d_tmp, d_sa, d_isa_in, d_isa_out, d_index, d_isa_tmp, h_ref, h_order, string_size, num_unique, num_seg, index_size);
+
+	}
+   	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time, start, stop);
+	stage2 += time;
+
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+
+	printf("stage 1, 2 and total time is %f, %f, %f\n", stage1, stage2, stage1 + stage2);
+	printf("bucket processing time is %f\n", bucketprocess);
+	printf("bucket sort time is %f\n", bucketsort);
+	printf("bitonic sort time is %f\n", bitonic);
+	printf("singleradix sort time is %f\n", singleradix);
+	printf("multiblockradix sort time is %f\n", multiblockradix);
+	printf("radix sort time is %f\n", radix);
+	printf("isa time is %f, %f, %f, %f\n", isa, isa_mark, isa_sum, isa_scatter);
+	printf("get2ndkey is %f\n", get2ndkey);
+	printf("findbdry is %f\n", findbdry);
+
+	printf("total is %f\n", bucketprocess+bucketsort+bitonic+singleradix+multiblockradix+radix+isa+get2ndkey+findbdry);
+
+	printf("sort test time is %f\n", sorttest);
+
+	cudaError_t err = cudaGetLastError();
+	if(err != cudaSuccess)
+		printf("last cudaerr is %d\n", err);
+
+	printf("----------------------------------------------------------------\n");
+
+	check_h_order_correctness(d_sa, (uint8*)h_ref, string_size, string_size);
+
+	//transfer output to host memory
+	mem_device2host(d_sa, h_sa, sizeof(uint32) * string_size);
+
+	//free memory
+	free_device_memory(d_sa);
+	free_device_memory(d_index);
+	free_device_memory(d_isa_in);
+	free_device_memory(d_isa_out);
+	free_device_memory(d_tmp);
+
+
+	//cudppDestroy(theCudpp);
+}
+

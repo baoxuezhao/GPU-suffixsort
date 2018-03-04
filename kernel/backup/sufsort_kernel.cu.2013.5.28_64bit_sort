@@ -1,0 +1,514 @@
+#include "../inc/Timer.h"
+#include "../inc/mgpu_header.h"
+/*
+ * thrust header
+ */
+#include <thrust/scan.h>
+#include <thrust/device_ptr.h>
+//#include <thrust/sort.h>
+//#include <thrust/scatter.h>
+//#include <thrust/gather.h>
+
+using namespace mgpu;
+
+template<typename T>
+inline void swap(T& a, T &b)
+{
+	T tmp = a;
+	a = b;
+	b = tmp;
+}
+
+__global__ void scatter_kernel(uint32 *d_L, uint32 *d_R_in, uint32 *d_R_out, uint32 size)
+{
+	/*
+	 * use shift instead of multiplication(times 4)
+	 */
+	uint32 tid = ((blockIdx.x*blockDim.x + threadIdx.x) << 2);
+	
+	if (tid >= size)
+		return;
+	
+	extern __shared__ uint4 shared_memory[];
+
+	uint4 *R_in = shared_memory;
+	uint4 *L = shared_memory + THREADS_PER_BLOCK;
+
+	R_in[threadIdx.x] = *((uint4*)(d_R_in+tid));
+	L[threadIdx.x] = *((uint4*)(d_L+tid));
+
+	d_R_out[L[threadIdx.x].x] = R_in[threadIdx.x].x;
+	d_R_out[L[threadIdx.x].y] = R_in[threadIdx.x].y;
+	d_R_out[L[threadIdx.x].z] = R_in[threadIdx.x].z;
+	d_R_out[L[threadIdx.x].w] = R_in[threadIdx.x].w;
+
+}
+
+__global__ void generate_bucket_with_shift(uint32 *d_sa, uint32 *d_ref, uint64 *d_isa, uint32 string_size)
+{
+	uint32 tid = (blockIdx.x*blockDim.x + threadIdx.x);
+	uint32 tid4 = tid*4;
+	uint32 cur_block, next_block1, next_block2;
+	uint64 data;
+
+	//boundary check 
+	if (tid4 >= string_size)
+		return;
+	
+	volatile __shared__ uint32 segment_ref[THREADS_PER_BLOCK+2];
+
+	d_sa[tid4] = tid4;
+	d_sa[tid4+1] = tid4+1;
+	d_sa[tid4+2] = tid4+2;
+	d_sa[tid4+3] = tid4+3;
+	
+	cur_block = d_ref[tid];
+
+	//change from little-endian to big-endian
+	cur_block = ((cur_block<<24)|((cur_block&0xff00)<<8)|((cur_block&0xff0000)>>8)|(cur_block>>24));
+
+	segment_ref[threadIdx.x] = cur_block;
+
+	if (threadIdx.x == THREADS_PER_BLOCK-1)
+	{	
+		next_block1 = d_ref[tid+1];
+		//change from little-endian to big-endian
+		next_block1 = ((next_block1<<24)|((next_block1&0xff00)<<8)|((next_block1&0xff0000)>>8)|(next_block1>>24));
+		segment_ref[threadIdx.x+1] = next_block1;
+
+		
+		next_block2 = d_ref[tid+2];
+		//change from little-endian to big-endian
+		next_block2 = ((next_block2<<24)|((next_block2&0xff00)<<8)|((next_block2&0xff0000)>>8)|(next_block2>>24));
+		segment_ref[threadIdx.x+2] = next_block2;
+	}
+	__syncthreads();
+	
+	next_block1 = segment_ref[threadIdx.x+1];
+	next_block2 = segment_ref[threadIdx.x+2];
+
+	/*
+	 *  shift operation on little endian system
+	 */
+	data = (((uint64)cur_block)<<32)|next_block1;
+	d_isa[tid4] = data;
+	d_isa[tid4+1] = (data<<8) | (next_block2>>24);
+	d_isa[tid4+2] = (data<<16) | (next_block2>>16);
+	d_isa[tid4+3] = (data<<24) | (next_block2>>8);
+}
+
+__global__ void get_first_keys_kernel(uint64 *d_tmp, uint32 *d_prefix_sum, uint32 size)
+{
+//	 use shift instead of multiply (times 4)
+	uint32 tid = ((blockIdx.x*blockDim.x + threadIdx.x) << 2);
+	
+	if (tid >= size)
+		return;
+
+	ulong4 out; 
+	ulong4* d_out_ptr = (ulong4*)(d_tmp+tid);
+	uint4 in = *((uint4*)(d_prefix_sum+tid));
+	out.x = (((uint64)(in.x)))<<32;
+	out.y = (((uint64)(in.y)))<<32;
+	out.z = (((uint64)(in.z)))<<32;
+	out.w = (((uint64)(in.w)))<<32;
+
+	*d_out_ptr = out;	
+}
+
+
+__global__ void get_sec_keys_kernel(uint32 *d_sa, uint32 *d_isa_sec, uint64 *d_tmp, uint32 size, uint32 cur_iter_bound)
+{
+	/*
+	 * use shift instead of multiply(times 4)
+	 */
+	uint32 tid = ((blockIdx.x*blockDim.x + threadIdx.x) << 2);
+
+	if (tid >= size)
+		return;
+/*
+	extern __shared__ uint4 shared_memory[];
+	
+	uint4* out = shared_memory;
+	uint4* segment_sa4 = shared_memory + THREADS_PER_BLOCK;
+	uint4* d_isa_out_ptr = (uint4*)(d_isa_out+tid);
+	
+	segment_sa4[threadIdx.x] = *((uint4*)(d_sa+tid));
+
+	
+	out[threadIdx.x].x = d_isa_in[segment_sa4[threadIdx.x].x];
+	out[threadIdx.x].y = d_isa_in[segment_sa4[threadIdx.x].y];
+	out[threadIdx.x].z = d_isa_in[segment_sa4[threadIdx.x].z];
+	out[threadIdx.x].w = d_isa_in[segment_sa4[threadIdx.x].w];
+
+	*d_isa_out_ptr = out[threadIdx.x];
+*/
+	uint4 sa_data = *((uint4*)(d_sa+tid));
+
+	
+	ulong4 key_data;
+	ulong4 *d_tmp_ptr = (ulong4*)(d_tmp+tid);
+/*
+	key_data.x = d_isa_fir[sa_data.x];
+	key_data.y = d_isa_fir[sa_data.y];
+	key_data.z = d_isa_fir[sa_data.z];
+	key_data.w = d_isa_fir[sa_data.w];
+	
+	key_data.x <<= 32;
+	key_data.y <<= 32;
+	key_data.z <<= 32;
+	key_data.w <<= 32;
+
+	if (sa_data.x <  cur_iter_bound)
+		key_data.x |= d_isa_sec[sa_data.x];
+	if (sa_data.y < cur_iter_bound)
+		key_data.y |= d_isa_sec[sa_data.y];
+	if (sa_data.z < cur_iter_bound)
+		key_data.z |= d_isa_sec[sa_data.z];
+	if (sa_data.w < cur_iter_bound)
+		key_data.w |= d_isa_sec[sa_data.w];
+
+	*d_tmp_ptr = key_data;
+*/
+	key_data = *d_tmp_ptr;
+	if (sa_data.x <  cur_iter_bound)
+		key_data.x |= d_isa_sec[sa_data.x];
+	if (sa_data.y < cur_iter_bound)
+		key_data.y |= d_isa_sec[sa_data.y];
+	if (sa_data.z < cur_iter_bound)
+		key_data.z |= d_isa_sec[sa_data.z];
+	if (sa_data.w < cur_iter_bound)
+		key_data.w |= d_isa_sec[sa_data.w];
+	
+	*d_tmp_ptr = key_data;
+	
+}
+
+__global__ void neighbour_comparison_kernel1(uint32 *d_isa_out, uint64 *d_tmp, uint32 size)
+{
+	//times 4
+	uint32 tid = ((blockIdx.x*blockDim.x + threadIdx.x) << 2);
+
+	if (tid >= size)
+		return;
+
+	uint4* d_isa_out_ptr = (uint4*)(d_isa_out+tid);
+	
+	ulong4 key_data = *((ulong4*)(d_tmp+tid));
+	uint4 out;
+	
+	if (key_data.x == key_data.y)
+		out.y = 0;
+	else
+		out.y = 1;
+
+	if (key_data.y == key_data.z)
+		out.z = 0;
+	else
+		out.z = 1;
+
+	if (key_data.z == key_data.w)
+		out.w = 0;
+	else
+		out.w = 1;
+
+	*d_isa_out_ptr = out;
+}
+
+
+__global__ void neighbour_comparison_kernel2(uint32 *d_isa_out, uint64 *d_tmp, uint32 size)
+{
+
+	uint32 tid = (blockIdx.x*blockDim.x + threadIdx.x+1) * 4;
+	
+	if (tid >= size)
+		return;
+
+	if (d_tmp[tid] == d_tmp[tid-1])
+		d_isa_out[tid] = 0;
+	else
+		d_isa_out[tid] = 1;
+}
+
+
+
+/**
+ * wrapper function of b40c radix sort utility
+ *
+ * sort entries according to d_keys
+ *
+ */
+template<typename T>
+void gpu_sort(T *d_keys, uint32 *d_values, uint32 size, ContextPtr context)
+{
+/*
+	b40c::radix_sort::Enactor enactor;
+	b40c::util::DoubleBuffer<uint32, uint32> sort_storage(d_keys, d_values);
+	enactor.Sort(sort_storage, size);
+*/
+	
+//	thrust::device_ptr<T> d_key_ptr = thrust::device_pointer_cast(d_keys);
+//	thrust::device_ptr<uint32> d_value_ptr = thrust::device_pointer_cast(d_values);
+
+//	thrust::sort_by_key(d_key_ptr, d_key_ptr+size, d_value_ptr);
+	MergesortPairs<T, uint32>(d_keys, d_values, size, *context);
+}
+
+void bucket_result(uint32 *d_sa, uint32 *d_isa, uint8* h_ref, uint32 string_size)
+{
+	uint32 *h_sa = (uint32*)allocate_pageable_memory(sizeof(uint32) * string_size);
+	uint32 *h_isa = (uint32*)allocate_pageable_memory(sizeof(uint32) * string_size);
+	mem_device2host(d_sa, h_sa, sizeof(uint32) * string_size);
+	mem_device2host(d_isa, h_isa, sizeof(uint32) * string_size);
+	
+	uint32 start_pos;
+
+	for (uint32 i = 0; i < string_size; i++)
+	{
+		start_pos = h_sa[i];
+		printf("bucket val: %#x, ref val: %#x%x%x%x\n", h_isa[i], h_ref[start_pos], h_ref[start_pos+1], h_ref[start_pos+2], h_ref[start_pos+3]);
+	}
+}
+
+void scatter(uint32 *d_L, uint32 *d_R_in, uint32 *d_R_out, uint32 size)
+{
+	
+	/* 
+	 *my implementation of scatter
+	 */
+	
+	dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
+	dim3 blocks_per_grid(1, 1, 1);
+	
+	uint32 shared_size = THREADS_PER_BLOCK * sizeof(uint32) * 8;
+	blocks_per_grid.x = CEIL(CEIL(size, 4) , threads_per_block.x);
+	
+	scatter_kernel<<<blocks_per_grid, threads_per_block, shared_size>>>(d_L, d_R_in, d_R_out, size);
+//	CHECK_KERNEL_ERROR("scatter_kernel");
+	cudaDeviceSynchronize();
+	
+
+	/*thurst scatter operation*/
+/*		
+	thrust::device_ptr<uint32> d_input_ptr = thrust::device_pointer_cast(d_R_in);
+	thrust::device_ptr<uint32> d_output_ptr = thrust::device_pointer_cast(d_R_out);
+	thrust::device_ptr<uint32> d_map_ptr = thrust::device_pointer_cast(d_L);
+
+	thrust::scatter(d_input_ptr, d_input_ptr+size, d_map_ptr, d_output_ptr);
+	cudaDeviceSynchronize();
+*/	
+}
+
+uint32 prefix_sum(uint32 *d_input, uint32 *d_output, uint32 size)
+{
+	uint32 sum = 0;
+	uint32 first_rank = 1;
+
+	mem_host2device(&first_rank, d_input, sizeof(uint32));
+
+	thrust::device_ptr<uint32> d_input_ptr = thrust::device_pointer_cast(d_input);
+	thrust::device_ptr<uint32> d_output_ptr = thrust::device_pointer_cast(d_output);
+
+	thrust::inclusive_scan(d_input_ptr, d_input_ptr+size, d_output_ptr);
+	
+	mem_device2host(d_output+size-1, &sum, sizeof(uint32));
+	
+	return sum;
+}
+
+bool update_isa(uint32 *d_sa, uint64 *d_tmp, uint32 *d_isa_in, uint32 *d_isa_out, uint32 string_size)
+{
+	dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
+	dim3 blocks_per_grid(1, 1, 1);
+	
+	uint32 last_rank = 0;
+	uint32 num_unique = 0;
+	uint32 shared_size = (THREADS_PER_BLOCK) * sizeof(uint32) * 16;
+	blocks_per_grid.x = CEIL(CEIL(string_size, 4) , threads_per_block.x);
+
+#ifdef __MEASURE_TIME__	
+	HANDLE_ERROR(cudaThreadSynchronize());
+	Start(NEIG_COM);
+#endif
+
+	neighbour_comparison_kernel1<<<blocks_per_grid, threads_per_block>>>(d_isa_out, d_tmp, string_size);
+//	CHECK_KERNEL_ERROR("neighbour_comparision_kernel1");
+
+	neighbour_comparison_kernel2<<<blocks_per_grid, threads_per_block>>>(d_isa_out, d_tmp, string_size);
+//	CHECK_KERNEL_ERROR("neighbour_comparision_kernel2");
+
+#ifdef __MEASURE_TIME__	
+	HANDLE_ERROR(cudaThreadSynchronize());
+	Stop(NEIG_COM);
+#endif
+	num_unique = prefix_sum(d_isa_out, d_isa_in, string_size);
+	
+	get_first_keys_kernel<<<blocks_per_grid, threads_per_block>>>(d_tmp, d_isa_in, string_size);
+
+#ifdef __DEBUG__
+	printf("number of unique ranks: %u\n", num_unique);
+#endif		
+
+	if (num_unique == string_size)
+		return true;
+#ifdef __MEASURE_TIME__	
+	HANDLE_ERROR(cudaThreadSynchronize());
+	Start(SCATTER);
+#endif
+	scatter(d_sa, d_isa_in, d_isa_out, string_size);
+
+#ifdef __MEASURE_TIME__	
+	Stop(SCATTER);
+#endif	
+	//isa[string_size] should always be 0
+	mem_host2device(&last_rank, d_isa_out+string_size, sizeof(uint32));
+
+	return false;
+}
+
+void derive_2h_order(uint32 *d_sa, uint64 *d_tmp, uint32 *d_isa, uint32 h_order, uint32 string_size, ContextPtr context)
+{
+	dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
+	dim3 blocks_per_grid(1, 1, 1);
+	
+	uint32 shared_size = (THREADS_PER_BLOCK) * sizeof(uint32) * 8; 
+	blocks_per_grid.x = CEIL(CEIL(string_size, 4), threads_per_block.x);
+
+#ifdef __MEASURE_TIME__	
+	HANDLE_ERROR(cudaThreadSynchronize());
+	Start(GET_KEY);
+#endif
+	//gather operation
+	get_sec_keys_kernel<<<blocks_per_grid, threads_per_block, shared_size>>>(d_sa, d_isa+h_order, d_tmp, string_size, string_size-h_order+1);
+//	CHECK_KERNEL_ERROR("get_keys_kernel");
+
+#ifdef __MEASURE_TIME__	
+	HANDLE_ERROR(cudaThreadSynchronize());
+	Stop(GET_KEY);
+	Start(GPU_SORT);
+#endif
+	gpu_sort<uint64>(d_tmp, d_sa, string_size, context);
+
+#ifdef __MEASURE_TIME__	
+	HANDLE_ERROR(cudaThreadSynchronize());
+	Stop(GPU_SORT);
+#endif
+		
+	/* thurst gather operation*/
+/*			
+	thrust::device_ptr<uint32> d_input_ptr = thrust::device_pointer_cast(d_isa_in);
+	thrust::device_ptr<uint32> d_output_ptr = thrust::device_pointer_cast(d_isa_out);
+	thrust::device_ptr<uint32> d_map_ptr = thrust::device_pointer_cast(d_sa);
+	thrust::gather(d_map_ptr, d_map_ptr+string_size, d_input_ptr, d_output_ptr);
+*/
+}
+
+void sort_first_8_ch(uint32 *d_sa, uint64 *d_tmp, uint32 *d_isa_in, uint32 *d_isa_out, uint32 *d_ref, uint32 ch_per_uint32, uint32 string_size, ContextPtr context)
+{
+	dim3 threads_per_block(THREADS_PER_BLOCK, 1, 1);
+	dim3 blocks_per_grid(1, 1, 1);
+
+	blocks_per_grid.x = CEIL(CEIL(string_size, ch_per_uint32), threads_per_block.x);
+
+	generate_bucket_with_shift<<<blocks_per_grid, threads_per_block>>>(d_sa, d_ref, d_tmp, string_size);
+	CHECK_KERNEL_ERROR("generate_bucket_with_shift");
+
+#ifdef __MEASURE_TIME__	
+	Start(GPU_SORT);
+#endif
+	/* sort bucket index stored in d_isa_in*/
+	gpu_sort<uint64>(d_tmp, d_sa, string_size, context);
+
+#ifdef __MEASURE_TIME__	
+	HANDLE_ERROR(cudaDeviceSynchronize());
+	Stop(GPU_SORT);
+#endif
+	
+	if(update_isa(d_sa, d_tmp, d_isa_in, d_isa_out, string_size))
+		printf("sort_first_8_ch: suffixes have been completely sorted\n");
+}
+
+/*
+ * release version
+ */
+void gpu_suffix_sorting_debug(uint32* h_sa, uint32* h_ref, uint32 string_size)
+{
+	ContextPtr context = CreateCudaDevice(0);
+
+	
+	uint32 ch_per_uint32 = 4;
+	uint32 shared_size = (THREADS_PER_BLOCK+4) *4; 
+	uint32 size_d_ref = CEIL(string_size, ch_per_uint32);
+	uint32 h_order = ch_per_uint32;
+
+	uint32* d_ref = (uint32*)allocate_device_memory(sizeof(uint32) * size_d_ref);
+	uint32* d_sa = (uint32*)allocate_device_memory(sizeof(uint32) * string_size);
+	uint32* d_isa_in = (uint32*)allocate_device_memory(sizeof(uint32) * string_size);
+	uint32* d_isa_out = (uint32*)allocate_device_memory(sizeof(uint32) * string_size);
+	uint64* d_tmp = (uint64*)allocate_device_memory(sizeof(uint64) * string_size);
+
+	
+	/*shared memory configuration*/
+	
+	enum cudaFuncCache pCacheConfig;
+	HANDLE_ERROR(cudaDeviceSetCacheConfig(cudaFuncCachePreferShared));
+	HANDLE_ERROR(cudaDeviceGetCacheConfig(&pCacheConfig));
+
+	if (pCacheConfig == cudaFuncCachePreferNone)
+		printf("cache perference: none \n");
+	else if (pCacheConfig == cudaFuncCachePreferShared)
+		printf("cache perference: shared memory \n");
+	else if (pCacheConfig == cudaFuncCachePreferL1)
+		printf("cache perference: L1 cache \n");
+	else
+	{
+		printf("cache perference: error\n");
+	}
+
+	mem_host2device(h_ref, d_ref, sizeof(uint32) * size_d_ref);
+#ifdef __MEASURE_TIME__	
+	Setup(0);
+	Setup(GET_KEY);
+	Setup(GPU_SORT);
+	Setup(NEIG_COM);
+	Setup(SCATTER);
+	Start(0);
+#endif	
+	sort_first_8_ch(d_sa, d_tmp, d_isa_in, d_isa_out, d_ref, ch_per_uint32, string_size, context);
+	::swap(d_isa_in, d_isa_out);
+
+	for (h_order = 8; h_order < string_size; h_order *= 2)
+	{
+		derive_2h_order(d_sa, d_tmp, d_isa_in, h_order, string_size, context);
+		
+		if(update_isa(d_sa, d_tmp, d_isa_in, d_isa_out, string_size))
+			break;
+
+		::swap(d_isa_in, d_isa_out);
+
+	}
+#ifdef __MEASURE_TIME__	
+	Stop(0);
+	printf("total elapsed time: %.2f s\n", GetElapsedTime(0));
+	printf("gpu sort: %.2f s\n", GetElapsedTime(GPU_SORT));
+	printf("get key: %.2f s\n", GetElapsedTime(GET_KEY));
+	printf("neig com: %.2f s\n", GetElapsedTime(NEIG_COM));
+	printf("scatter:  %.2f s\n", GetElapsedTime(SCATTER));
+#endif
+
+#ifdef __DEBUG__		
+	check_h_order_correctness(d_sa, (uint8*)h_ref, string_size, string_size);
+#endif
+
+
+	//transfer output to host memory
+	mem_device2host(d_sa, h_sa, sizeof(uint32) * string_size);
+
+	//free memory
+	free_device_memory(d_ref);
+	free_device_memory(d_sa);
+	free_device_memory(d_isa_in);
+	free_device_memory(d_isa_out);
+	free_device_memory(d_tmp);
+}
+

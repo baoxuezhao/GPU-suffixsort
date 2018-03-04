@@ -1,0 +1,163 @@
+2.205472	0.296352	0.030240	0.013376	12.238017	25.637472
+../data/calgary/progc  8  1  256  65536
+initial sorting time is 2.205472 (ms)
+unsorted group sorting time is 34.072063 (ms)
+s-type, m-type and l-type sorting time are 0.296352, 0.030240, 0.013376
+get sorting key time is 0.000000
+group processing time is 25.637472 (ms)
+deriving ISA time is 12.238017 (ms)
+total suffix sorting time is 40.420929 (ms)
+----------------------------------------------------------------
+1.641856	0.244480	0.027552	0.012640	7.654528	15.512384
+../data/calgary/paper1  8  1  256  65536
+initial sorting time is 1.641856 (ms)
+unsorted group sorting time is 20.323135 (ms)
+s-type, m-type and l-type sorting time are 0.244480, 0.027552, 0.012640
+get sorting key time is 0.000000
+group processing time is 15.512384 (ms)
+deriving ISA time is 7.654528 (ms)
+total suffix sorting time is 25.093441 (ms)
+----------------------------------------------------------------
+5.443840	1.306048	2.261888	0.017696	6.932160	18.008926
+../data/calgary/book2  8  1  256  65536
+initial sorting time is 5.443840 (ms)
+unsorted group sorting time is 20.315712 (ms)
+s-type, m-type and l-type sorting time are 1.306048, 2.261888, 0.017696
+get sorting key time is 0.000000
+group processing time is 18.008926 (ms)
+deriving ISA time is 6.932160 (ms)
+total suffix sorting time is 33.970558 (ms)
+----------------------------------------------------------------
+./breakdown.sh: line 4: : command not found
+19.060928	9.992479	4.770849	0.020352	20.810497	27.794018
+../data/canterbury/bible.txt  8  1  256  65536
+initial sorting time is 19.060928 (ms)
+unsorted group sorting time is 48.963390 (ms)
+s-type, m-type and l-type sorting time are 9.992479, 4.770849, 0.020352
+get sorting key time is 0.000000
+group processing time is 27.794018 (ms)
+deriving ISA time is 20.810497 (ms)
+total suffix sorting time is 82.449127 (ms)
+----------------------------------------------------------------
+20.801697	13.847648	3.485408	0.023424	24.200220	35.653728
+../data/canterbury/E.coli  8  1  256  65536
+initial sorting time is 20.801697 (ms)
+unsorted group sorting time is 60.634113 (ms)
+s-type, m-type and l-type sorting time are 13.847648, 3.485408, 0.023424
+get sorting key time is 0.000000
+group processing time is 35.653728 (ms)
+deriving ISA time is 24.200220 (ms)
+total suffix sorting time is 98.012131 (ms)
+----------------------------------------------------------------
+12.388576	8.154561	4.534816	0.018208	16.365568	26.055902
+../data/canterbury/world192.txt  8  1  256  65536
+initial sorting time is 12.388576 (ms)
+unsorted group sorting time is 44.458591 (ms)
+s-type, m-type and l-type sorting time are 8.154561, 4.534816, 0.018208
+get sorting key time is 0.000000
+group processing time is 26.055902 (ms)
+deriving ISA time is 16.365568 (ms)
+total suffix sorting time is 67.517632 (ms)
+----------------------------------------------------------------
+./breakdown.sh: line 8: : command not found
+46.374462	20.535906	4.881056	0.028128	44.657471	44.993408
+../data/silesia/dickens  8  1  256  65536
+initial sorting time is 46.374462 (ms)
+unsorted group sorting time is 84.108444 (ms)
+s-type, m-type and l-type sorting time are 20.535906, 4.881056, 0.028128
+get sorting key time is 0.000000
+group processing time is 44.993408 (ms)
+deriving ISA time is 44.657471 (ms)
+total suffix sorting time is 161.470428 (ms)
+----------------------------------------------------------------
+182.777191	78.678787	63.581558	23.376709	199.279495	130.546402
+../data/silesia/webster  8  1  256  65536
+initial sorting time is 182.777191 (ms)
+unsorted group sorting time is 375.398804 (ms)
+s-type, m-type and l-type sorting time are 78.678787, 63.581558, 23.376709
+get sorting key time is 0.000000
+group processing time is 130.546402 (ms)
+deriving ISA time is 199.279495 (ms)
+total suffix sorting time is 678.240112 (ms)
+----------------------------------------------------------------
+./breakdown.sh: line 11: : command not found
+465.417694	362.751221	92.125145	3.037920	652.231567	438.381897
+../data/manzini/etext99  8  1  256  65536
+initial sorting time is 465.417694 (ms)
+unsorted group sorting time is 1240.269775 (ms)
+s-type, m-type and l-type sorting time are 362.751221, 92.125145, 3.037920
+get sorting key time is 0.000000
+group processing time is 438.381897 (ms)
+deriving ISA time is 652.231567 (ms)
+total suffix sorting time is 2013.945312 (ms)
+----------------------------------------------------------------
+485.369415	357.817200	276.557404	31.229666	769.135803	487.862793
+../data/manzini/sprot34.dat  8  1  256  65536
+initial sorting time is 485.369415 (ms)
+unsorted group sorting time is 1613.060913 (ms)
+s-type, m-type and l-type sorting time are 357.817200, 276.557404, 31.229666
+get sorting key time is 0.000000
+group processing time is 487.862793 (ms)
+deriving ISA time is 769.135803 (ms)
+total suffix sorting time is 2407.972168 (ms)
+----------------------------------------------------------------
+513.001038	414.153381	179.390289	100.822876	794.597961	524.114014
+../data/manzini/rfc  8  1  256  65536
+initial sorting time is 513.001038 (ms)
+unsorted group sorting time is 1682.819092 (ms)
+s-type, m-type and l-type sorting time are 414.153381, 179.390289, 100.822876
+get sorting key time is 0.000000
+group processing time is 524.114014 (ms)
+deriving ISA time is 794.597961 (ms)
+total suffix sorting time is 2526.079590 (ms)
+----------------------------------------------------------------
+502.752777	422.095245	350.172577	286.839233	1058.970947	687.720764
+../data/manzini/rctail96  8  1  256  65536
+initial sorting time is 502.752777 (ms)
+unsorted group sorting time is 2471.642822 (ms)
+s-type, m-type and l-type sorting time are 422.095245, 350.172577, 286.839233
+get sorting key time is 0.000000
+group processing time is 687.720764 (ms)
+deriving ISA time is 1058.970947 (ms)
+total suffix sorting time is 3308.551514 (ms)
+----------------------------------------------------------------
+146.854492	29.521217	75.294662	79.754265	161.347076	119.593758
+../data/manzini/chr22.dna  8  1  256  65536
+initial sorting time is 146.854492 (ms)
+unsorted group sorting time is 366.375702 (ms)
+s-type, m-type and l-type sorting time are 29.521217, 75.294662, 79.754265
+get sorting key time is 0.000000
+group processing time is 119.593758 (ms)
+deriving ISA time is 161.347076 (ms)
+total suffix sorting time is 612.365479 (ms)
+----------------------------------------------------------------
+176.465317	121.804825	24.993280	12.308511	223.629166	169.819824
+../data/manzini/howto  8  1  256  65536
+initial sorting time is 176.465317 (ms)
+unsorted group sorting time is 439.964844 (ms)
+s-type, m-type and l-type sorting time are 121.804825, 24.993280, 12.308511
+get sorting key time is 0.000000
+group processing time is 169.819824 (ms)
+deriving ISA time is 223.629166 (ms)
+total suffix sorting time is 729.020935 (ms)
+----------------------------------------------------------------
+301.511749	311.369385	359.169952	39.251778	745.388977	502.242310
+../data/manzini/jdk13c  8  1  256  65536
+initial sorting time is 301.511749 (ms)
+unsorted group sorting time is 1756.584961 (ms)
+s-type, m-type and l-type sorting time are 311.369385, 359.169952, 39.251778
+get sorting key time is 0.000000
+group processing time is 502.242310 (ms)
+deriving ISA time is 745.388977 (ms)
+total suffix sorting time is 2258.934082 (ms)
+----------------------------------------------------------------
+457.120117	850.790161	290.422333	37.026524	1492.013672	1083.906494
+../data/manzini/w3c2  8  1  256  65536
+initial sorting time is 457.120117 (ms)
+unsorted group sorting time is 3452.960205 (ms)
+s-type, m-type and l-type sorting time are 850.790161, 290.422333, 37.026524
+get sorting key time is 0.000000
+group processing time is 1083.906494 (ms)
+deriving ISA time is 1492.013672 (ms)
+total suffix sorting time is 4211.279297 (ms)
+----------------------------------------------------------------

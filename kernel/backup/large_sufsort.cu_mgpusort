@@ -1,0 +1,326 @@
+#include "../inc/Timer.h"
+#include "../inc/mgpu_header.h"
+#include "../inc/sufsort_util.h"
+/*
+ * thrust header
+ */
+//#include <thrust/device_ptr.h>
+//#include <thrust/sort.h>
+
+
+__global__ void generate_bucket_with_shift(uint32 *d_sa, uint32 *d_ref, uint32 *d_isa, uint32 string_size, uint32 num_interval)
+{
+	uint32 tid = threadIdx.x;
+	uint32 start = blockIdx.x*NUM_THREADS*NUM_ELEMENT_ST;
+	uint32 cur_block, next_block;
+	
+	volatile __shared__ uint32 segment_ref[NUM_THREADS*4+10];
+
+	for (uint32 index = start + tid*4; index < string_size+4; index += num_interval)
+	{
+		d_sa[index] = index;
+		d_sa[index+1] = index+1;
+		d_sa[index+2] = index+2;
+		d_sa[index+3] = index+3;
+	
+		cur_block = d_ref[index/4];
+			
+		//change from little-endian to big-endian
+		cur_block = ((cur_block<<24)|((cur_block&0xff00)<<8)|((cur_block&0xff0000)>>8)|(cur_block>>24));
+
+		segment_ref[tid] = cur_block;
+
+		if (tid == NUM_THREADS-1)
+		{	
+			next_block = d_ref[index/4+1];
+			
+			//change from little-endian to big-endian
+			next_block = ((next_block<<24)|((next_block&0xff00)<<8)|((next_block&0xff0000)>>8)|(next_block>>24));
+	
+			segment_ref[tid+1] = next_block;
+		}
+		__syncthreads();
+		
+		next_block = segment_ref[tid+1];
+
+		/*
+		 *  shift operation on little endian system
+		 */
+		d_isa[index] = cur_block;
+		d_isa[index+1] = ((cur_block << 8) | (next_block >> 24));
+		d_isa[index+2] = ((cur_block << 16) | (next_block >> 16));
+		d_isa[index+3] = ((cur_block << 24) | (next_block >> 8));
+	/*	
+		if (index+3 == string_size-1)
+		{	
+			printf("d_isa[%u]: %#x\n", string_size-1, d_isa[string_size-1]);
+		//	printf("tid: %u, %#x, %#x\n", tid, segment_ref[tid], segment_ref[tid+1]);
+		}
+		if (index == 46088180)
+			printf("d_isa[%u]: %#x\n", index, d_isa[index]);
+	*/
+		__syncthreads();
+	}
+}
+
+__global__ void get_second_keys(uint32 *d_sa, uint32 *d_isa_in, uint32 *d_isa_out, uint32 h_boundary, uint32 size, uint32 num_interval)
+{
+	uint32 tid = threadIdx.x;
+	uint32 start = blockIdx.x * NUM_THREADS * NUM_ELEMENT_ST;
+	uint4 segment_sa;
+	uint4 out;
+	
+	for (uint32 index = start + tid*4; index < size; index += num_interval)
+	{
+		uint4* d_out_ptr = (uint4*)(d_isa_out+index);
+		segment_sa = *((uint4*)(d_sa+index));
+
+		if (segment_sa.x < h_boundary)
+			out.x = d_isa_in[segment_sa.x];
+
+		if (segment_sa.y < h_boundary)
+			out.y = d_isa_in[segment_sa.y];
+
+		if (segment_sa.z < h_boundary)
+			out.z = d_isa_in[segment_sa.z];
+
+		if (segment_sa.w < h_boundary)
+			out.w = d_isa_in[segment_sa.w];
+		
+		*d_out_ptr = out;
+	}	
+}
+
+__global__ void get_first_keys(uint32 *d_sa, uint32 *d_isa_in, uint32 *d_isa_out, uint32 size, uint32 num_interval)
+{
+	uint32 tid = threadIdx.x;
+	uint32 start = blockIdx.x * NUM_THREADS * NUM_ELEMENT_ST;
+
+	uint4 out;
+	uint4 segment_sa4;
+	
+	for (uint32 index = start+tid*4; index < size; index += num_interval)
+	{
+		uint4* d_isa_out_ptr = (uint4*)(d_isa_out+index);
+	
+		segment_sa4 = *((uint4*)(d_sa+index));
+	
+		out.x = d_isa_in[segment_sa4.x];
+		out.y = d_isa_in[segment_sa4.y];
+		out.z = d_isa_in[segment_sa4.z];
+		out.w = d_isa_in[segment_sa4.w];
+
+		*d_isa_out_ptr = out;
+	}
+}
+
+
+__global__ void neighbour_comparison_kernel1(uint32 *d_sa, uint32 *d_isa_out, uint32 *d_isa_in, uint32 size, uint32 h_order, uint32 num_interval)
+{
+	uint32 tid = threadIdx.x;
+	uint32 start = blockIdx.x * NUM_THREADS * NUM_ELEMENT_ST;
+	uint4 segment_sa4;
+	uint4 segment_key;
+	uint4 out;
+
+	for (uint32 index = start+tid*4; index < size; index += num_interval)
+	{
+		uint4* d_isa_out_ptr = (uint4*)(d_isa_out+index);
+
+		segment_key = *((uint4*)(d_isa_out+index));
+		segment_sa4 = *((uint4*)(d_sa+index));
+
+		if ((segment_key.x == segment_key.y) && (d_isa_in[segment_sa4.x] == d_isa_in[segment_sa4.y]))
+			out.y = 0;
+		else
+			out.y = 1;
+	
+		if ((segment_key.y == segment_key.z) && (d_isa_in[segment_sa4.y] == d_isa_in[segment_sa4.z]))
+			out.z = 0;
+		else
+			out.z = 1;
+	
+		if ((segment_key.z == segment_key.w) && (d_isa_in[segment_sa4.z] == d_isa_in[segment_sa4.w]))
+			out.w = 0;
+		else
+			out.w = 1;
+		
+		*d_isa_out_ptr = out;
+	}
+}
+
+__global__ void neighbour_comparison_kernel2(uint32 *d_sa, uint32 *d_isa_out, uint32 *d_isa, uint32 *d_isa_plus_h, uint32 size, uint32 num_interval)
+{
+	uint32 tid = threadIdx.x;
+	uint32 start = blockIdx.x * NUM_THREADS * NUM_ELEMENT_ST;
+	uint2 segment_sa2;
+	
+	for (uint32 index = start+(tid+1)*4; index < size; index += num_interval)
+	{
+		segment_sa2.x = d_sa[index-1];
+		segment_sa2.y = d_sa[index];
+
+		if ((d_isa[segment_sa2.x] == d_isa[segment_sa2.y]) && (d_isa_plus_h[segment_sa2.x] == d_isa_plus_h[segment_sa2.y]))
+			d_isa_out[index] = 0;
+		else
+			d_isa_out[index] = 1;
+	}
+}
+
+template<typename T>
+inline void swap(T& a, T &b)
+{
+	T tmp = a;
+	a = b;
+	b = tmp;
+}
+
+
+/**
+ * wrapper thrust sort utility
+ *
+ * sort entries according to d_keys
+ *
+ */
+/* 
+void gpu_sort(uint32 *d_keys, uint32 *d_values, uint32 size)
+{
+	
+	thrust::device_ptr<uint32> d_key_ptr = thrust::device_pointer_cast(d_keys);
+	thrust::device_ptr<uint32> d_value_ptr = thrust::device_pointer_cast(d_values);
+
+	thrust::stable_sort_by_key(d_key_ptr, d_key_ptr+size, d_value_ptr);
+
+	cudaDeviceSynchronize();
+}
+*/
+
+bool update_isa(uint32 *d_sa, uint32 *d_isa_in, uint32 *d_isa_out, uint32 string_size, uint32 h_order)
+{
+	uint32 last_rank[3] = {0xffffffff, 0, 0xffffffff};
+	uint32 num_unique = 0;
+	uint32 num_interval = BLOCK_NUM * NUM_THREADS * NUM_ELEMENT_ST;
+
+	mem_host2device(last_rank, d_isa_out+string_size, sizeof(uint32)*3);
+
+	neighbour_comparison_kernel1<<<BLOCK_NUM, NUM_THREADS>>>(d_sa, d_isa_out, d_isa_in+h_order, string_size, h_order, num_interval);
+	CHECK_KERNEL_ERROR("neighbour_comparision_kernel1");
+
+	neighbour_comparison_kernel2<<<BLOCK_NUM, NUM_THREADS>>>(d_sa, d_isa_out, d_isa_in, d_isa_in+h_order, string_size, num_interval);
+	CHECK_KERNEL_ERROR("neighbour_comparision_kernel2");
+
+	num_unique = prefix_sum(d_isa_out, d_isa_in, string_size);
+	
+#ifdef __DEBUG__
+
+	printf("number of unique ranks: %u\n", num_unique);
+
+#endif		
+
+	if (num_unique == string_size)
+		return true;
+
+	scatter(d_sa, d_isa_in, d_isa_out, string_size);
+
+	return false;
+}
+
+void derive_2h_order(sortEngine_t &engine, MgpuSortData &sort_data, uint32 *d_sa, uint32 *d_isa_in, uint32 *d_isa_out, uint32 h_order, uint32 string_size)
+{
+	uint32 num_interval = BLOCK_NUM * NUM_THREADS * NUM_ELEMENT_ST;
+
+	get_second_keys<<<BLOCK_NUM, NUM_THREADS>>>(d_sa, d_isa_in+h_order, d_isa_out, string_size-h_order+1, string_size, num_interval);
+
+	mgpu_sort(engine, sort_data, d_isa_out, d_sa, string_size);
+	
+	get_first_keys<<<BLOCK_NUM, NUM_THREADS>>>(d_sa, d_isa_in, d_isa_out, string_size, num_interval);
+	
+	mgpu_sort(engine, sort_data, d_isa_out, d_sa, string_size);
+}
+
+/*
+ * release version
+ */
+void large_sufsort_entry(uint32* h_sa, uint32* h_ref, uint32 string_size)
+{
+	uint32 last_rank[3] = {0xffffffff, 0, 0xffffffff};
+	uint32 ch_per_uint32 = 4;
+	uint32 size_d_ref = CEIL(string_size, ch_per_uint32);
+	uint32 h_order = ch_per_uint32;
+	uint32 num_interval = BLOCK_NUM * NUM_THREADS * NUM_ELEMENT_ST;
+	
+	/* object needed by mgpu sort utility  */
+	ContextPtr context;
+	sortEngine_t engine;
+	MgpuSortData sort_data;
+
+	/*initilaize mgpu sort engine*/
+	init_mgpu_engine(context, engine, 0);
+	alloc_mgpu_data(engine, sort_data, string_size);
+
+	/*set boundary values of input to 0xff*/
+	uint8 *h_ref8 = (uint8*)h_ref;
+	for (uint32 i = string_size; i < string_size+8; i++)
+		h_ref8[i] = 0xff;
+	
+	/* round up to 2048 */
+	uint32* d_ref = (uint32*)allocate_device_memory_roundup(sizeof(uint32) * size_d_ref, sizeof(uint32)*NUM_THREADS*NUM_ELEMENT_ST);
+	uint32* d_sa = (uint32*)allocate_device_memory_roundup(sizeof(uint32) * string_size, sizeof(uint32)*NUM_THREADS*NUM_ELEMENT_ST*2);
+	uint32* d_isa_in = (uint32*)allocate_device_memory_roundup(sizeof(uint32) * string_size, sizeof(uint32)*NUM_THREADS*NUM_ELEMENT_ST*2);
+	uint32* d_isa_out = (uint32*)allocate_device_memory_roundup(sizeof(uint32) * string_size, sizeof(uint32)*NUM_THREADS*NUM_ELEMENT_ST*2);
+	
+	#ifdef __DEBUG__
+		gpu_mem_usage();
+		printf("string_size: %u\n", string_size);
+	#endif
+
+//	set_large_shared_memory();
+
+	mem_host2device(h_ref, d_ref, sizeof(uint32) * (size_d_ref+3));
+	
+	Setup(0);
+	Start(0);
+	
+	generate_bucket_with_shift<<<BLOCK_NUM, NUM_THREADS>>>(d_sa, d_ref, d_isa_in, string_size, num_interval);
+	cudaDeviceSynchronize();
+
+	free_device_memory(d_ref);
+
+	/* sort bucket index stored in d_isa_in*/
+	mgpu_sort(engine, sort_data, d_isa_in, d_sa, string_size);
+
+	/* get 4-order isa  */
+	scatter(d_sa, d_isa_in, d_isa_out, string_size);
+	::swap(d_isa_in, d_isa_out);
+
+	check_h_order_correctness(d_sa, (uint8*)h_ref, string_size, 4);
+	mem_host2device(last_rank, d_isa_in+string_size, sizeof(uint32)*3);
+	
+	for (; h_order < string_size; h_order *= 2)
+	{
+		derive_2h_order(engine, sort_data, d_sa, d_isa_in, d_isa_out, h_order, string_size);
+	
+		check_h_order_correctness(d_sa, (uint8*)h_ref, string_size, 2*h_order);
+
+		if(update_isa(d_sa, d_isa_in, d_isa_out, string_size, h_order))
+			break;	
+		::swap(d_isa_in, d_isa_out);
+	}
+	Stop(0);
+
+	printf("elapsed time: %.2f s\n", GetElapsedTime(0));
+
+	check_h_order_correctness(d_sa, (uint8*)h_ref, string_size, string_size);
+
+	//transfer output to host memory
+	mem_device2host(d_sa, h_sa, sizeof(uint32) * string_size);
+
+	//free memory
+	free_device_memory(d_sa);
+	free_device_memory(d_isa_in);
+	free_device_memory(d_isa_out);
+	
+	release_mgpu_engine(engine, sort_data);
+	cudaDeviceReset();
+}
+
